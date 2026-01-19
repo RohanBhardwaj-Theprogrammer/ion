@@ -1,0 +1,24 @@
+[package]
+name = "c_cpp_build_system_n_pkg_manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3           # Maximum optimization for speed
+lto = "fat"            # Full Link Time Optimization across all crates
+codegen-units = 1      # Single codegen unit for better optimization
+strip = true           # Strip symbols for smaller binary
+panic = "abort"        # Smaller binary, no unwinding
+overflow-checks = false # Disable runtime overflow checks for speed
+debug = false          # No debug info for smaller binary
+rpath = false          # No rpath for smaller binary
+incremental = false    # Disable incremental compilation for better optimization
+
+[profile.release.build-override]
+opt-level = 3          # Optimize build scripts too
+
+[profile.release.package."*"]
+opt-level = 3          # Optimize all dependencies at max level
+strip = true           # Strip all dependencies too
