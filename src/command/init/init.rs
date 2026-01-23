@@ -31,7 +31,7 @@ pub struct CustomStructure {
 pub struct InitArgs {
     pub lang: LangType,
     pub path: String,
-    pub custom_structure: Option<CustomStructure>, 
+    pub custom_structure: Option<CustomStructure>,
     pub force: bool,
     pub help: bool,
     pub interactive: bool,
@@ -165,8 +165,6 @@ pub fn execute(init_args: InitArgs, _configs: &Configs) -> Result<String, String
     }
 
     create_init_fs::generate_dotfile(&init_args.path, init_args.force)?;
-
-
 
     let skip_default_structure = init_args
         .custom_structure

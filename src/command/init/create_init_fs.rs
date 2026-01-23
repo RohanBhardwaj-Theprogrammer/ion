@@ -1,6 +1,6 @@
 use crate::command::init::LangType;
 use crate::utils::is_cbuild_project;
-use std::{fs, path};
+use std::fs;
 use std::path::Path;
 
 pub fn generate_dotfile(path: &str, force: bool) -> Result<(), String> {
@@ -47,10 +47,17 @@ pub fn generate_dotfile(path: &str, force: bool) -> Result<(), String> {
     Ok(())
 }
 
-pub fn generate_project_structure(path: &Path,structure_path:Option<&Path>, lang: LangType, force: bool) -> Result<(), String> {
+pub fn generate_project_structure(
+    path: &Path,
+    structure_path: Option<&Path>,
+    lang: LangType,
+    force: bool,
+) -> Result<(), String> {
     if let Some(structure_path) = structure_path {
         sketch::generate_custom_structure(structure_path, path, force)
-    }else {sketch::structure_at(Path::new(path), lang, force) }
+    } else {
+        sketch::structure_at(Path::new(path), lang, force)
+    }
 }
 
 // currenlty stub
@@ -173,7 +180,9 @@ pub mod sketch {
             serde_json::from_str(&format_content).map_err(|e| e.to_string())?;
 
         let base_path = target_path.to_path_buf();
-
+        println!(" Structure Preview : ");
+        tree_view(&custom_format);
+        println!(" \n Proceeding to create structure at : {} ", base_path.display());
         create_from_structure(&custom_format, &base_path)
     }
 
@@ -218,6 +227,68 @@ pub mod sketch {
         }
 
         Ok(())
+    }
+
+    pub fn tree_view(structure: &CustomProjectStructure) {
+        struct PrintState<'a> {
+            node: &'a CustomProjectStructure,
+            prefix: String,
+            is_last: bool,
+        }
+
+        let mut stack: Vec<PrintState> = Vec::new();
+        stack.push(PrintState {
+            node: structure,
+            prefix: " ".repeat(5).to_string(),
+            is_last: true,
+        });
+
+        while let Some(state) = stack.pop() {
+            let branch = if state.is_last {
+                "└── "
+            } else {
+                "├── "
+            };
+            println!("{}{}{}/", state.prefix, branch, state.node.name);
+
+            // Print files
+            if let Some(files) = &state.node.files {
+                let last_files_index = files.len().saturating_sub(1);
+                let have_any_folder = if state.node.folders.is_some()
+                    && !state.node.folders.as_ref().unwrap().is_empty()
+                {
+                    true
+                } else {
+                    false
+                };
+
+                for (i, file) in files.iter().enumerate() {
+                    let file_branch = if i == last_files_index && !have_any_folder {
+                        "└── "
+                    } else {
+                        "├── "
+                    };
+                    let mut file_prefix = state.prefix.clone();
+                    file_prefix.push_str(if state.is_last { "    " } else { "│   " });
+                    println!("{}{}{}", file_prefix, file_branch, file);
+                }
+            }
+
+            // Print folders
+            if let Some(folders) = &state.node.folders {
+                let last_folder_index = folders.len().saturating_sub(1);
+                let mut new_prefix = state.prefix.clone();
+                new_prefix.push_str(if state.is_last { "    " } else { "│   " });
+                for (i, folder) in folders.iter().enumerate().rev() {
+                    let is_last_folder = i == last_folder_index;
+                    stack.push(PrintState {
+                        node: folder,
+                        prefix: new_prefix.clone(),
+                        is_last: is_last_folder,
+                    });
+                }
+            }
+        }
     }
 }
 
