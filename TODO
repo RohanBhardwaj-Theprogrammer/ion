@@ -1,16 +1,15 @@
 
-LLogs Every Actions
-
-Create a command Chain and stores it in the .ccbkg 
-
-uses the last executed command as default if no command is provided
-
-change the default compiler standard to c++20 or any user specified standard , and store all them in the .ccbkg file for future builds
-
  make the run and build and check to take the more arguments , to make them freeze in the filxe positions 
  or make them like cbuild run ; no arguments then run the last exteud file same for all the others
  and  cbuild run 2 ; run the file that is at the no. second at the last time 
 
  and cbuild /x ; run the last x command 
 
- and in the cbuild , imporve the in and out stream , currenlty only support the files , not the standars to the screen , 
+
+
+ //********************
+ //in the tfm add the archive folder and the custom folder creations support and the descriptoins support
+ // also , attaching the functionlity on the the folders and removal of funciotnaltity like log, clean  , etc 
+ // better searching in the different files 
+ //   by histiroy folder -i 
+ //********************

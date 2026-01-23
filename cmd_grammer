@@ -1,0 +1,254 @@
+; Command grammar specification
+
+; =============================
+; common lexical-ish elements
+; =============================
+
+<path>        := <token>
+<file-path>   := <path>
+<file-name>   := <token>
+<int>         := <digits>
+<identifier>  := <token>
+<exe-arg>     := <token>
+<env-pair>    := <token in form key=value>
+<extension>   := "." <token>
+<any-tokens>  := <token> { <token> }
+
+; =============================
+; init command
+; =============================
+
+init :=
+      "init" [ init_lang ] [ init_path ] [ init_custom ] [ init_force ]
+    | "init" help
+    | "init" interactive
+
+init_lang   := "-c" | "-cpp"
+init_path   := <path>
+init_custom := "--custom-structure" "=" <file-path>
+             | "--custom-structure" "=" "--clean"
+init_force  := "-f" | "--force"
+interactive := "-i" | "-interactive"
+
+; =============================
+; run command
+; =============================
+
+run :=
+      "run" run_empty
+    | "run" run_seq
+    | "run" run_full
+    | "run" help
+    | "run" run_config
+    | "run" interactive
+
+; special empty-string target form
+run_empty := "\"\""
+
+; sequential / positional form
+; run <fileName | int | "" | .> [inputFilePath] [outputFilePath] [-- <exe arguments>]
+run_seq :=
+      run_target_pos
+    [ run_input_pos ]
+    [ run_output_pos ]
+    [ "--" run_exe_args ]
+
+run_target_pos := run_target_ref
+run_input_pos  := <file-path>
+run_output_pos := <file-path>
+
+; full flag form
+; run <fileName | int | "" | .> [(-in | <<) <filename>] [(-out | >>) <filename>] [-std <int>] [-- <exe-args>]
+run_full :=
+    run_target_ref
+        [ run_input_opt ]
+        [ run_output_opt ]
+        [ run_std_opt ]
+        [ "--" run_exe_args ]
+
+; shared pieces
+run_target_ref :=
+      <file-name>    ; by name
+    | <int>          ; by numeric index
+    | "\"\""         ; empty-string special value
+    | "."            ; current project
+
+run_input_opt  := ( "-in" | "<<" )  <file-path>
+run_output_opt := ( "-out" | ">>" ) <file-path>
+run_std_opt    := "-std" <int>
+run_exe_args   := <any-tokens>
+
+; configuration form (conceptual object notation from Blueprint)
+; --config { [-std <int>] , [. <lastExe | project.exe>] , [-in <lastIn | default>] , [-out <lastOut | default>] }
+run_config :=
+    "--config" run_config_body
+
+run_config_body :=
+    "{" [ run_config_entries ] "}"
+
+run_config_entries :=
+      run_config_entry
+    | run_config_entry { "," run_config_entry }
+
+run_config_entry :=
+      run_config_std
+    | run_config_dot
+    | run_config_in
+    | run_config_out
+
+run_config_std := "-std" <int>
+run_config_dot := "." ( "lastExe" | "project.exe" )
+run_config_in  := "-in"  ( "lastIn"  | "default" )
+run_config_out := "-out" ( "lastOut" | "default" )
+
+; =============================
+; build command
+; =============================
+
+build :=
+      "build" build_prev
+    | "build" build_target
+    | "build" build_profile
+    | "build" help
+    | "build" interactive
+
+; 1. Reuse previous command/target: /<int>
+build_prev := "/" <int>
+
+; 2. Build a specific file/target (full flag form)
+build_target :=
+    build_target_ref
+        [ build_opt ]
+        [ build_std ]
+        [ build_includes ]
+        [ build_objects ]
+
+build_target_ref :=
+      <file-name>
+    | <int>
+    | "\"\""
+    | "."
+
+build_opt      := "-opt" <int>
+build_std      := "-std" <int>
+build_includes := "-I"  <path> { <path> }
+build_objects  := "-objects" <file-path> { <file-path> }
+
+; 3. Build using a named profile, e.g. --debug, --release
+build_profile := "--" <identifier>
+
+; =============================
+; check command
+; =============================
+
+; check <fileName | int | . | "">
+check :=
+    "check" check_target
+
+check_target :=
+      <file-name>
+    | <int>
+    | "."
+    | "\"\""
+
+; =============================
+; clean command
+; =============================
+
+; clean [*.extension ...] [-all] [--force | -f]
+clean :=
+    "clean"
+        [ clean_ext_list ]
+        [ clean_all ]
+        [ clean_force ]
+
+clean_ext_list :=
+    clean_ext { clean_ext }
+
+clean_ext :=
+    "*" <extension>
+
+clean_all   := "-all"
+clean_force := "--force" | "-f"
+
+; =============================
+; log command
+; =============================
+
+; log [run | build | init | clear [cmd] | . | (default | "")] | <--off | --on>
+log :=
+      "log" [ log_arg ]
+    | "log" log_toggle
+
+log_arg :=
+      "run"
+    | "build"
+    | "init"
+    | log_clear
+    | "."
+    | "default"
+    | "\"\""
+
+log_clear :=
+    "clear" [ log_clear_cmd ]
+
+log_clear_cmd := <identifier>
+
+log_toggle :=
+      "--off"
+    | "--on"
+
+; =============================
+; env command
+; =============================
+
+; env [--cmd] [key=value ... | -path <path> | [--cmd] <--clear>]
+env :=
+    "env"
+        [ env_cmd_scope ]
+        [ env_body ]
+
+env_cmd_scope := "--cmd"
+
+env_body :=
+      env_pairs
+    | env_path
+    | env_clear_full
+
+env_pairs :=
+    <env-pair> { <env-pair> }
+
+env_path :=
+    "-path" <path>
+
+env_clear_full :=
+    [ env_cmd_scope ] "--clear"
+
+; =============================
+; keep-eye command
+; =============================
+
+; keep-eye <cmd> [commandOptions]
+keep_eye :=
+    "keep-eye"
+        keep_eye_cmd
+        [ keep_eye_args ]
+
+keep_eye_cmd  := <identifier>
+keep_eye_args := <any-tokens>
+
+; =============================
+; profile command
+; =============================
+
+; profile [-i]
+profile :=
+    "profile"
+        [ interactive ]
+
+; =============================
+; shared
+; =============================
+
+help := "--help" | "-h" | "-help"
+

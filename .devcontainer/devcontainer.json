@@ -1,0 +1,19 @@
+{
+  "name": "Rust C/C++ Build System - Isolated",
+  "dockerFile": "../Dockerfile.win-gnu",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "ms-vscode.cpptools",
+        "ms-vscode.makefile-tools"
+      ]
+    }
+  },
+  "remoteUser": "root",
+  "postCreateCommand": "rustc --version && cargo --version && cargo install cargo-watch",
+  // "postStartCommand": "cargo watch -x 'check' -d 5",
+  // "forwardPorts": [3000, 8000],
+  "shutdownAction": "stopContainer"
+}

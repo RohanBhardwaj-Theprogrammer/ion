@@ -1,0 +1,103 @@
+# Build artifacts (HUGE - 800+ MB) - built inside container
+target/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.o
+*.obj
+*.pdb
+
+# Cargo/Rust cache - managed by Docker cache mounts
+**/.cargo/
+**/target/
+**/*.rs.bk
+**/Cargo.lock
+**/.rustc_info.json
+**/incremental/
+
+# Git (not needed in container)
+.git/
+.github/
+.gitignore
+.gitattributes
+.gitmodules
+
+# IDE/Editor (not needed in container)
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+.project
+.settings/
+.classpath
+
+# Test/archive folders (not needed in build)
+test_dummy/
+archive/
+tests/
+benches/
+examples/
+
+# Docker files (don't copy Docker files into Docker)
+Dockerfile*
+docker-build.bat
+docker-compose.yml
+.dockerignore
+
+# Documentation (not needed in runtime)
+Blueprint.md
+TODO
+README.md
+*.md
+cmd_grammer
+output.txt
+docs/
+doc/
+
+# CI/CD (not needed in container)
+.github/
+.gitlab-ci.yml
+.travis.yml
+azure-pipelines.yml
+Jenkinsfile
+.circleci/
+
+# OS specific (system files)
+.DS_Store
+Thumbs.db
+desktop.ini
+.Spotlight-V100
+.Trashes
+
+# Logs & temp files
+*.log
+*.tmp
+*.temp
+*.cache
+logs/
+tmp/
+temp/
+
+# Node/Python (if any - not needed)
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.tox/
+venv/
+env/
+
+# Profiling/benchmarks
+*.prof
+*.perf
+flamegraph.svg
+
+# Backup files
+*.bak
+*.backup
+*.old

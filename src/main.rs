@@ -1,51 +1,40 @@
+use std::path::PathBuf;
 
-use std::env;
+use ion::cmd_parser::parser::parse_args;
+use ion::command;
+use ion::config::Configs;
+use ion::state;
+use ion::state::ProjectStructure;
+use ion::utils;
 
-pub mod cmd_parser;
-pub mod command ;  
+fn main() {
+    //first intialize the cofigs  and //FIXME: all these two to be done in the async or parallel way
 
-use command::{build_cmd, init_cmd, run_cmd, clean_cmd, check_cmd, help_cmd};
-use cmd_parser::CmdType;
+    let project_root = utils::find_cbuild(".");
+    let mut project_structure: ProjectStructure;
+    let mut configs: Configs;
 
-fn main(){ 
-    let args: Vec<String> = env::args().collect();
-    let parsed_cmd = cmd_parser::parser_cmd(args);
+    if project_root.is_none() {
+        configs = Configs::default(PathBuf::from("."));
+        project_structure = state::structure::ProjectStructure::none();
+    } else {
+        let root = project_root.as_deref().unwrap_or(".");
+        configs = Configs::default(PathBuf::from(root));
+        project_structure = state::structure::ProjectStructure::new(&configs);
+    }
 
-    let root_dir = env::current_dir().unwrap().to_str().unwrap().to_string(); 
-    
-    match &parsed_cmd {
-        CmdType::Help => { 
-            help_cmd(); 
-        },
-        CmdType::Init(_) => { 
-            match init_cmd(&root_dir, &parsed_cmd) {
-                Ok(msg) => println!("{}", msg),
-                Err(e) => eprintln!("Error: {}", e),
-            }
-        },
-        CmdType::Build(_, _, _) => { 
-            match build_cmd(&root_dir, &parsed_cmd) {
-                Ok(msg) => println!("✅ Build successful: {}", msg),
-                Err(e) => eprintln!("❌ Build failed: {}", e),
-            }
-        },
-        CmdType::Run(_, _, _) => { 
-            match run_cmd(&root_dir, &parsed_cmd) {
-                Ok(msg) => println!("{}", msg),
-                Err(e) => eprintln!("Error: {}", e),
-            }
-        },
-        CmdType::Clean(_) => { 
-            match clean_cmd(&root_dir, &parsed_cmd) {
-                Ok(msg) => println!("{}", msg),
-                Err(e) => eprintln!("Error: {}", e),
-            }
-        },
-        CmdType::Check(_) => { 
-            match check_cmd(&root_dir, &parsed_cmd) {
-                Ok(msg) => println!("{}", msg),
-                Err(e) => eprintln!("Error: {}", e),
-            }
-        },
+    // takes the command line arguments and parses them
+    let cli_args = std::env::args().collect::<Vec<String>>();
+    let parsed_command = parse_args(cli_args);
+
+    let result = command::execute(parsed_command, &mut configs, &mut project_structure);
+
+    match result {
+        Ok(message) => {
+            println!("{}", message);
+        }
+        Err(error) => {
+            eprintln!("Error: {}", error);
+        }
     }
 }

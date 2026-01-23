@@ -1,0 +1,19 @@
+Argument 0 : ./tests/test_project/build/main.exe
+Argument 1 : arg1
+Argument 2 : arg2
+=============================================
+|      current working directory is  "C:\\Users\\rohan\\temp-folder-temp-data-storage-base\\PROJECTS\\c_cpp_build_system_n_pkg_manager\\tests\\test_project"      |
+=============================================
+
+++++++++++++++++++++++++++++++++++++
+The Entered Number is : 5656
+++++++++++++++++++++++++++++++++++++
+[LOG] foo() called
+[LOG] add() called
+[LOG] multiply() called
+[LOG] Computation done
+25================================================================================================================
++++++++++++++++++++++++++++++++++++++++ MAIN MESSAGE START ++++++++++++++++++++++++++++++++++++++++
+      ===============================================Formatted Message===============================================
+      |     this is a sample formatted message from some_message() function.     |
+      ==============================================================================================================

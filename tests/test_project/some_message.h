@@ -1,0 +1,3 @@
+
+
+void some_message();
