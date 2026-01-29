@@ -2,18 +2,19 @@ use std::path::PathBuf;
 
 use crate::cmd_parser::{cmd::Type, parser::ParsedCommand};
 use crate::command::run::run_parser::parse_file_name;
-use crate::compiler::Compiler;
+use crate::compiler::{Compiler, LangX};
+use crate::compiler::trailt::FromBuildConfigs;
 use crate::config::Configs;
-use crate::utils::is_numeric; // REVIEW: is this needed anywhere ?
+
 
 #[derive(Clone, Debug)]
 pub struct BuildArgs {
     file_name: PathBuf,
-    opt_level: u8,
-    std: u8,
+    opt_level: Option<u8>,
+    std: Option<u8>,
     i_extra: Vec<String>,
     //object_files : Vec<String>, // future use
-    build_profile: String,
+    build_profile: Option<String>,
     help_flag: bool,
     interactive_flag: bool,
 }
@@ -38,10 +39,10 @@ pub fn build_parser(
     }
     let mut build_args = BuildArgs {
         file_name: PathBuf::new(),
-        opt_level: 0,
-        std: 11,
+        opt_level: None,
+        std: None,
         i_extra: Vec::new(),
-        build_profile: "debug".to_string(),
+        build_profile: Some("Debug".to_string()),
         help_flag: false,
         interactive_flag: false,
     };
@@ -57,12 +58,12 @@ pub fn build_parser(
             }
             "-std" => {
                 if let Some(val) = iter.next() {
-                    build_args.std = val.parse::<u8>().unwrap_or(11);
+                    build_args.std = Some(val.parse::<u8>().unwrap_or(11));
                 }
             }
             "-opt" | "-o" => {
                 if let Some(val) = iter.next() {
-                    build_args.opt_level = val.parse::<u8>().unwrap_or(0);
+                    build_args.opt_level = Some(val.parse::<u8>().unwrap_or(0));
                 }
             }
             "-I" | "--include" => {
@@ -76,10 +77,13 @@ pub fn build_parser(
             }
             arg if arg.starts_with("--") && arg.len() > 2 => {
                 // e.g. --release, --profileName
-                build_args.build_profile = arg[2..].to_string();
+                let profile = &arg[2..];
+                
+                    build_args.build_profile = Some(profile.to_string());
+                
             }
             first => {
-                if !first.starts_with('-') && !first.starts_with("--") {
+                if !first.starts_with('-') && !first.starts_with("--") && build_args.file_name.as_os_str().is_empty() {
                     build_args.file_name = parse_file_name(first, configs, project_structure);
                 }
             }
@@ -100,14 +104,33 @@ fn execute(
     }
 
     let file_name = &build_args.file_name;
-    let entry_file_name = file_name.to_str().unwrap_or("");
+    let entry_file_name = file_name.to_str().expect("[Entry File]: Unable to converts the Types");
     let opt_level = build_args.opt_level;
     let std = build_args.std;
     let i_extra = &build_args.i_extra;
+
     #[cfg(any(test, debug_assertions))]
     let build_profile = &build_args.build_profile;
     
-    let build_settings = crate::compiler::build_settings::BuildSettings::release();
+    let  mut build_settings = crate::compiler::build_settings::build_profile_as_per(&build_args.build_profile);
+    if let Some(_profile_name) = &build_args.build_profile {
+        if let Some(user_build_configs) = configs.get_build_profile(&build_args.build_profile) {
+            build_settings.from_build_config(user_build_configs);
+        }
+    }
+    
+    //TODO: implement these CLI args properly
+    if let Some(_) = opt_level {
+        eprintln!("Note: Optimization level from CLI is currently not implemented.\n\tUse a build profile or set it in your configuration file.");
+    }
+    if let Some(_) = std {
+        eprintln!("Note: Standard setting from CLI is currently not implemented.\n\tUse a build profile or set it in your configuration file.");
+    }
+    if !i_extra.is_empty() {
+        eprintln!("Note: Extra include paths (-I/--include) from CLI are currently not implemented.\n\tAdd include paths to your build profile configuration instead.");
+    }
+
+
     let deps = crate::deps::DependencyGraph::new(entry_file_name, project_structure);
     let include_files = crate::compiler::includes::IncludeFiles::new(
         &deps,
@@ -147,10 +170,10 @@ fn execute(
 
     match compile_result {
         Ok(output) => {
-            println!("Build succeeded. Output: {}", output);
+            
             Ok(format!(
-                "Build Process Completed. Binary at {}",
-                compiler.build_name
+                "Build Process Completed. Binary at {} : {}",
+                compiler.build_name,output
             ))
         }
         Err(err) => {
@@ -187,7 +210,7 @@ pub fn build(
 
 //________________________________TESTS________________________________
 
-#[cfg(test_)]
+#[cfg(test)]
 mod test {
     use super::*;
     use crate::cmd_parser::parser::parse_args;
@@ -198,23 +221,23 @@ mod test {
         let build_args_cli = "program build -std 17 -opt 2 -I ./include --release main.cpp";
         let args_vec: Vec<String> = build_args_cli.split(' ').map(|s| s.to_string()).collect();
         let parsed_command = parse_args(args_vec);
-        let root_path = "./tests/test_project";
-        let configs = Configs::default(root_path);
+        let root_path = std::path::PathBuf::from("./tests/test_project");
+        let configs = Configs::default(root_path.clone());
         let mut project_structure = crate::state::structure::ProjectStructure::new(&configs);
         let build_args = build_parser(&parsed_command, &configs, &mut project_structure);
-        let expected = std::fs::canonicalize(format!("{}/main.cpp", root_path))
-            .unwrap()
-            .to_string_lossy();
+        let main_cpp_path = root_path.join("main.cpp");
+        let canonicalized = std::fs::canonicalize(&main_cpp_path).unwrap();
+        let expected = canonicalized.to_string_lossy();
         let actual = build_args.file_name.clone();
         // Normalize separators for comparison across platforms
         assert_eq!(
             crate::utils::canonicalize_path_separators(&actual.to_string_lossy()),
             crate::utils::canonicalize_path_separators(&expected)
         );
-        assert_eq!(build_args.std, 17);
-        assert_eq!(build_args.opt_level, 2);
+        assert_eq!(build_args.std, Some(17));
+        assert_eq!(build_args.opt_level, Some(2));
         assert_eq!(build_args.i_extra, vec!["./include".to_string()]);
-        assert_eq!(build_args.build_profile, "release".to_string());
+        assert_eq!(build_args.build_profile, Some("release".to_string()));
     }
 
     #[test]
@@ -222,8 +245,8 @@ mod test {
         let build_args_cli = "program build -std 17 -opt 2 -I ./include --release main.cpp";
         let args_vec: Vec<String> = build_args_cli.split(' ').map(|s| s.to_string()).collect();
         let parsed_command = parse_args(args_vec);
-        let root_path = "./tests/test_project";
-        let configs = Configs::default(root_path);
+        let root_path = std::path::PathBuf::from("./tests/test_project");
+        let configs = Configs::default(root_path.clone());
 
         // Skip if a C++ compiler isn't available on PATH.
         if std::process::Command::new("g++")
@@ -239,10 +262,10 @@ mod test {
         let build_args = build_parser(&parsed_command, &configs, &mut project_structure);
         let mut project_structure = crate::state::structure::ProjectStructure::new(&configs);
         let _ = execute(&build_args, &configs, &mut project_structure);
-        let exe_path = format!("{}/build/main.exe", root_path);
+        let exe_path = root_path.join("build/main.exe");
         assert!(
-            std::path::Path::new(&exe_path).exists(),
-            "Executable should be created at {}",
+            exe_path.exists(),
+            "Executable should be created at {:?}",
             exe_path
         );
     }

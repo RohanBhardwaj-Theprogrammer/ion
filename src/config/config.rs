@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::command::init::LangType;
+use crate::{command::init::LangType, compiler::BuildProfileConfigs, compiler::BuildProfileConfig};
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 struct ProjectConfigs {
@@ -16,7 +16,9 @@ struct ProjectConfigs {
     pub exclude: Option<Vec<String>>,
     pub include: Option<Vec<String>>,
     pub macros: Option<Vec<String>>,
+    pub build_profiles: Option<BuildProfileConfigs>,
 }
+#[derive(Debug,Clone, serde::Deserialize, serde::Serialize)]
 pub struct BuildConfig {
     pub std: usize,
     pub lang: LangType,
@@ -52,6 +54,7 @@ impl BuildConfig {
     }
 }
 
+#[derive(Debug,Clone, serde::Deserialize, serde::Serialize)]
 pub struct RunConfig {
     pub std: usize,
     pub file: String,
@@ -89,7 +92,7 @@ impl RunConfig {
 
 //XXX: implement these
 // If you need EnvConfigs, LogConfigs, CheckConfigs, define them here. Otherwise, remove these empty structs.
-
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct Configs {
     pub configs: ProjectConfigs,
     pub root_path: PathBuf,
@@ -135,22 +138,46 @@ impl Configs {
             None => root_path.join(format!(".{}", crate::constants::PROGRAM_NAME)),
         };
 
-        let project_config = ProjectConfigs {
-            name: root_path
-                .file_stem()
-                .unwrap()
-                .to_str()
-                .map(|s| s.to_string()),
-            root: root_path.to_path_buf(),
-            lang: Some(lang.clone()),
-            std: None,
-            main: None,
-            exclude: None,
-            include: None,
-            macros: None,
+        let configs = Configs {
+            configs: ProjectConfigs {
+                name: root_path
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .map(|s| s.to_string()),
+                root: root_path.to_path_buf(),
+                lang: Some(lang.clone()),
+                std: None,
+                main: None,
+                exclude: None,
+                include: None,
+                macros: None,
+                build_profiles: None,
+            },
+            root_path: root_path.to_path_buf(),
+            allowed_extensions: vec![
+                ".cpp".to_string(),
+                ".c".to_string(),
+                ".hpp".to_string(),
+                ".h".to_string(),
+                ".cc".to_string(),
+                ".cxx".to_string(),
+            ],
+            run: RunConfig::default(),
+            build: BuildConfig::default(),
+            excluded_dirs: [
+                format!(".{}", crate::constants::PROGRAM_NAME),
+                "node_modules".to_string(),
+                ".git".to_string(),
+                ".vscode".to_string(),
+                "docs".to_string(),
+            ]
+            .iter()
+            .cloned()
+            .collect::<HashSet<String>>(),
         };
 
-        let toml_string = toml::to_string_pretty(&project_config)
+        let toml_string = toml::to_string_pretty(&configs)
             .map_err(|e| format!("Failed to serialize config to TOML: {}", e))?;
 
         match fs::create_dir_all(&configs_at_path) {
@@ -211,6 +238,7 @@ impl Configs {
                 exclude: None,
                 include: None,
                 macros: None,
+                build_profiles: None,
             },
             root_path: root_path,
             allowed_extensions,
@@ -273,6 +301,7 @@ impl Configs {
                 exclude: None,
                 include: None,
                 macros: None,
+                build_profiles: None,
             },
             root_path: PathBuf::from(root_path),
             allowed_extensions,
@@ -329,6 +358,34 @@ impl Configs {
                 }
             }
             other => PathBuf::from(other),
+        }
+    }
+
+    pub fn get_build_profile(&self, profile_name: &Option<String>) -> Option<BuildProfileConfig> {
+        match profile_name {
+            Some(name) => {
+                if let Some(build_profiles) = &self.configs.build_profiles {
+                    build_profiles.get(name).cloned()
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    }
+}
+
+
+impl Drop for Configs {
+    fn drop(&mut self) {
+        // Serialize the config, but don't panic if it fails
+        if let Ok(serialized_configs) = toml::to_string(&self) {
+            // Save to .<PROGRAM_NAME>/config.toml in the root path
+            let config_dir = self.root_path.join(format!(".{}", crate::constants::PROGRAM_NAME));
+            let config_file = config_dir.join("config.toml");
+            // Try to create the directory if it doesn't exist
+            let _ = std::fs::create_dir_all(&config_dir);
+            let _ = std::fs::write(config_file, serialized_configs);
         }
     }
 }

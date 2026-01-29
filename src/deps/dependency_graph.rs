@@ -8,6 +8,8 @@ use crate::state::structure::ProjectStructure;
 
 /// Returns the `SourceFileType` for a given file path based on its extension.
 /// Unknown extensions are mapped to `SourceFileType::Unknown`.
+
+//FIXME: need to use the Path/PathBuf type here instead of &str
 fn get_file_type(file_path: &str) -> SourceFileType {
     std::path::Path::new(file_path)
         .extension()

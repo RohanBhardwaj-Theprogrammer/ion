@@ -1,5 +1,6 @@
-use crate::compiler::trailt::ToCompilerArgs;
+use crate::compiler::trailt::{FromBuildConfigs, ToCompilerArgs};
 use std::collections::HashSet;
+
 
 // --- Preprocessor Configuration ---
 #[derive(Debug, Clone)]
@@ -50,12 +51,29 @@ impl Macros {
     pub fn remove_undefine(&mut self, macro_name: &str) {
         self.undef.remove(macro_name);
     }
+
+}
+impl FromBuildConfigs<PreprocessorConfigConfig> for Macros {
+    fn from_build_config(&mut self, mut macro_config: PreprocessorConfigConfig) {
+        if let Some(defines) = macro_config.defines.take() {
+            for def in defines {
+                self.def.insert(def);
+            }
+        }
+        if let Some(undefines) = macro_config.undefines.take() {
+            for undef in undefines {
+                self.undef.insert(undef);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct PreprocessorConfig {
     pub macros: Macros,
+
 }
+
 
 impl Default for PreprocessorConfig {
     fn default() -> Self {
@@ -71,25 +89,34 @@ impl ToCompilerArgs for PreprocessorConfig {
     }
 }
 
+impl FromBuildConfigs<PreprocessorConfigConfig> for PreprocessorConfig {
+    fn from_build_config(&mut self, config_data: PreprocessorConfigConfig) {
+        self.macros.from_build_config(config_data);
+    }
+}
+
 // --- Language Configuration ---
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+// will be checked from the lang option in the configs
 pub enum LangX {
     C(i16),   // version
     Cpp(i16), // version
-    Asm,
-    AsmCpp,
+    Asm, // not in support yet, but a future consideration
+    AsmCpp, // not in support yet, but a future consideration
 }
 
 impl ToCompilerArgs for LangX {
     fn to_args(&self) -> Vec<String> {
         match self {
-            LangX::C(version) => vec![format!("-std=c{}", version)],
-            LangX::Cpp(version) => vec![format!("-std=c++{}", version)],
-            LangX::Asm => vec![],
-            LangX::AsmCpp => vec![],
+            // Emit -std flag for any positive version (future-proof for new standards)
+            LangX::C(version) if *version > 0 => vec![format!("-std=c{}", version)],
+            LangX::Cpp(version) if *version > 0 => vec![format!("-std=c++{}", version)],
+            LangX::C(_) | LangX::Cpp(_) => vec![],
+            LangX::Asm | LangX::AsmCpp => vec![],
         }
     }
 }
+
 
 impl Default for LangX {
     fn default() -> Self {
@@ -97,7 +124,8 @@ impl Default for LangX {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum LangException {
     NoExceptions,
     Exceptions,
@@ -109,6 +137,9 @@ impl Default for LangException {
         LangException::Default
     }
 }
+
+
+
 
 impl ToCompilerArgs for LangException {
     fn to_args(&self) -> Vec<String> {
@@ -139,6 +170,24 @@ impl Default for LanguageConfig {
     }
 }
 
+impl FromBuildConfigs<LanguageConfigConfig> for LanguageConfig {
+    fn from_build_config(&mut self, congigs_data :LanguageConfigConfig)  {
+            if let Some(standard) = congigs_data.langx {
+                self.standard = standard;
+            }
+        if let Some(exc) = congigs_data.exception {
+            self.exception = exc;
+        }
+        if let Some(strict) = congigs_data.strict_checking {
+            self.strict_checking = strict;
+        }
+        if let Some(lax_vec) = congigs_data.lax_vector_conversions {
+            self.lax_vector_conversions = lax_vec;
+        }
+        
+    }
+}
+
 impl ToCompilerArgs for LanguageConfig {
     fn to_args(&self) -> Vec<String> {
         let mut args = self.standard.to_args();
@@ -154,7 +203,8 @@ impl ToCompilerArgs for LanguageConfig {
 }
 
 // --- Control Configuration ---
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DependencyInfoBuild {
     None,
     M,
@@ -181,7 +231,8 @@ impl ToCompilerArgs for DependencyInfoBuild {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CompilationMode {
     Default,     // Full compilation to executable
     ObjectOnly,  // -c : Compile to object files only
@@ -225,6 +276,20 @@ impl Default for CompilationControl {
     }
 }
 
+impl FromBuildConfigs<CompilationControlConfig> for CompilationControl {
+    fn from_build_config(&mut self, config_data: CompilationControlConfig) {
+        if let Some(mode) = config_data.compilation_mode {
+            self.compilation_mode = mode;
+        }
+        if let Some(dep_info) = config_data.dependency_info {
+            self.dependency_info = dep_info;
+        }
+        if let Some(pipe) = config_data.use_pipe {
+            self.use_pipe = pipe;
+        }
+    }
+}
+
 impl ToCompilerArgs for CompilationControl {
     fn to_args(&self) -> Vec<String> {
         let mut args = self.compilation_mode.to_args();
@@ -242,6 +307,17 @@ pub struct LoggingOptions {
     pub show_commands: bool,
 }
 
+impl FromBuildConfigs<LoggingOptionsConfig> for LoggingOptions {
+    fn from_build_config(&mut self, config_data: LoggingOptionsConfig) {
+        if let Some(verb) = config_data.verbose {
+            self.verbose = verb;
+        }
+        if let Some(show_cmds) = config_data.show_commands {
+            self.show_commands = show_cmds;
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ControlConfig {
     pub control: CompilationControl,
@@ -257,6 +333,17 @@ impl Default for ControlConfig {
     }
 }
 
+impl FromBuildConfigs<ControlConfigConfig> for ControlConfig {
+    fn from_build_config(&mut self, config_data: ControlConfigConfig) {
+        if let Some(control_cfg) = config_data.control {
+            self.control.from_build_config(control_cfg);
+        }
+        if let Some(logging_cfg) = config_data.logging {
+            self.logging.from_build_config(logging_cfg);
+        }
+    }
+}
+
 impl ToCompilerArgs for ControlConfig {
     fn to_args(&self) -> Vec<String> {
         let mut args = self.control.to_args();
@@ -268,7 +355,8 @@ impl ToCompilerArgs for ControlConfig {
 }
 
 // --- Optimization Configuration ---
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum OptLevel {
     Default, // Let compiler decide
     O0,
@@ -301,7 +389,8 @@ impl ToCompilerArgs for OptLevel {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Lto {
     None,
     Thin,
@@ -345,6 +434,32 @@ impl Default for OptimizationOptions {
             fpic: false,
             funroll_loops: false,
             fomit_frame_pointer: false,
+        }
+    }
+}
+
+impl FromBuildConfigs<OptimizationOptionConfig> for OptimizationOptions {
+    fn from_build_config(&mut self, config_data: OptimizationOptionConfig) {
+        if let Some(level) = config_data.level {
+            self.level = level;
+        }
+        if let Some(march) = config_data.march {
+            self.march = Some(march);
+        }
+        if let Some(mtune) = config_data.mtune {
+            self.mtune = Some(mtune);
+        }
+        if let Some(lto) = config_data.lto {
+            self.lto = lto;
+        }
+        if let Some(fpic) = config_data.fpic {
+            self.fpic = fpic;
+        }
+        if let Some(funroll) = config_data.funroll_loops {
+            self.funroll_loops = funroll;
+        }
+        if let Some(fomit) = config_data.fomit_frame_pointer {
+            self.fomit_frame_pointer = fomit;
         }
     }
 }
@@ -408,6 +523,20 @@ pub struct MachineTarget {
     pub features: Vec<String>,
 }
 
+impl FromBuildConfigs<MachineTargetConfig> for MachineTarget {
+    fn from_build_config(&mut self, config_data: MachineTargetConfig) {
+        if let Some(triple) = config_data.target_triple {
+            self.target_triple = Some(triple);
+        }
+        if let Some(cpu) = config_data.cpu {
+            self.cpu = Some(cpu);
+        }
+        if let Some(features) = config_data.features {
+            self.features = features;
+        }
+    }
+}
+
 impl ToCompilerArgs for MachineTarget {
     fn to_args(&self) -> Vec<String> {
         let mut args = Vec::new();
@@ -431,6 +560,17 @@ impl ToCompilerArgs for MachineTarget {
 pub struct OptimizationConfig {
     pub options: OptimizationOptions,
     pub target: MachineTarget,
+}
+
+impl FromBuildConfigs<OptimizationConfigConfig> for OptimizationConfig {
+    fn from_build_config(&mut self, config_data: OptimizationConfigConfig) {
+        if let Some(options_cfg) = config_data.options {
+            self.options.from_build_config(options_cfg);
+        }
+        if let Some(target_cfg) = config_data.target {
+            self.target.from_build_config(target_cfg);
+        }
+    }
 }
 
 impl Default for OptimizationConfig {
@@ -460,7 +600,8 @@ impl ToCompilerArgs for OptimizationConfig {
 }
 
 // --- Diagnostic Configuration ---
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DebugLevel {
     None,
     G,       // -g (default debug info)
@@ -504,6 +645,14 @@ impl ToCompilerArgs for DebugOptions {
     }
 }
 
+// impl FromBuildConfigs<DebugOptionsConfig> for DebugOptions {
+//     fn from_build_config(&mut self, config_data: DebugOptionsConfig) {
+//         if let Some(level) = config_data.level {
+//             self.level = level;
+//         }
+//     }
+// }
+
 #[derive(Debug, Clone)]
 pub struct WarningOptions {
     pub wall: bool,
@@ -537,6 +686,26 @@ impl WarningOptions {
         }
     }
 }
+
+// impl FromBuildConfigs<WarningOptionsConfig> for WarningOptions {
+//     fn from_build_config(&mut self, config_data: WarningOptionsConfig) {
+//         if let Some(wall) = config_data.wall {
+//             self.wall = wall;
+//         }
+//         if let Some(wextra) = config_data.wextra {
+//             self.wextra = wextra;
+//         }
+//         if let Some(werror) = config_data.werror {
+//             self.werror = werror;
+//         }
+//         if let Some(wpedantic) = config_data.wpedantic {
+//             self.wpedantic = wpedantic;
+//         }
+//         if let Some(pedantic_errors) = config_data.pedantic_errors {
+//             self.pedantic_errors = pedantic_errors;
+//         }
+//     }
+// }
 
 impl ToCompilerArgs for WarningOptions {
     fn to_args(&self) -> Vec<String> {
@@ -574,6 +743,26 @@ pub struct SanitizerOptions {
     pub leak: bool,      // -fsanitize=leak (detects memory leaks)
 }
 
+// impl FromBuildConfigs<SanitizerOptionsConfigs> for SanitizerOptions {
+//     fn from_build_config(&mut self, config_data: SanitizerOptionsConfigs) {
+//         if let Some(address) = config_data.address {
+//             self.address = address;
+//         }
+//         if let Some(thread) = config_data.thread {
+//             self.thread = thread;
+//         }
+//         if let Some(memory) = config_data.memory {
+//             self.memory = memory;
+//         }
+//         if let Some(undefined) = config_data.undefined {
+//             self.undefined = undefined;
+//         }
+//         if let Some(leak) = config_data.leak {
+//             self.leak = leak;
+//         }
+//     }
+// }
+
 impl ToCompilerArgs for SanitizerOptions {
     fn to_args(&self) -> Vec<String> {
         let mut args = Vec::new();
@@ -609,6 +798,44 @@ impl Default for DiagnosticConfig {
             debug: DebugOptions::default(),
             warnings: WarningOptions::default(),
             sanitizers: SanitizerOptions::default(),
+        }
+    }
+}
+
+impl FromBuildConfigs<DiagnosticConfigConfig> for DiagnosticConfig {
+    fn from_build_config(&mut self, config_data: DiagnosticConfigConfig) {
+        if let Some(level) = config_data.debug_level {
+            self.debug.level = level;
+        }
+        if let Some(wall) = config_data.wall {
+            self.warnings.wall = wall;
+        }
+        if let Some(wextra) = config_data.wextra {
+            self.warnings.wextra = wextra;
+        }
+        if let Some(werror) = config_data.werror {
+            self.warnings.werror = werror;
+        }
+        if let Some(wpedantic) = config_data.wpedantic {
+            self.warnings.wpedantic = wpedantic;
+        }
+        if let Some(pedantic_errors) = config_data.pedantic_errors {
+            self.warnings.pedantic_errors = pedantic_errors;
+        }
+        if let Some(address) = config_data.sanitizer_address {
+            self.sanitizers.address = address;
+        }
+        if let Some(thread) = config_data.sanitizer_thread {
+            self.sanitizers.thread = thread;
+        }
+        if let Some(memory) = config_data.sanitizer_memory {
+            self.sanitizers.memory = memory;
+        }
+        if let Some(undefined) = config_data.sanitizer_undefined {
+            self.sanitizers.undefined = undefined;
+        }
+        if let Some(leak) = config_data.sanitizer_leak {
+            self.sanitizers.leak = leak;
         }
     }
 }
@@ -655,7 +882,7 @@ impl ToCompilerArgs for DiagnosticConfig {
 // --- Linker Configuration ---
 
 /// Link mode: static, shared, or default (let compiler decide)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
 pub enum LinkMode {
     Default, // Let compiler decide
     Static,  // -static (fully static linking)
@@ -837,6 +1064,61 @@ impl LinkerConfig {
     }
 }
 
+impl FromBuildConfigs<LinkerConfigConfig> for LinkerConfig {
+    fn from_build_config(&mut self, config_data: LinkerConfigConfig) {
+        if let Some(mode) = config_data.mode {
+            self.mode = mode;
+        }
+        // RuntimeOptions
+        if let Some(static_libgcc) = config_data.static_libgcc {
+            self.runtime.static_libgcc = static_libgcc;
+        }
+        if let Some(static_libstdcpp) = config_data.static_libstdcpp {
+            self.runtime.static_libstdcpp = static_libstdcpp;
+        }
+        if let Some(pthread) = config_data.pthread {
+            self.runtime.pthread = pthread;
+        }
+        // ABIOptions
+        if let Some(abi_version) = config_data.abi_version {
+            self.abi.abi_version = Some(abi_version);
+        }
+        if let Some(no_gnu_unique) = config_data.no_gnu_unique {
+            self.abi.no_gnu_unique = no_gnu_unique;
+        }
+        if let Some(no_common) = config_data.no_common {
+            self.abi.no_common = no_common;
+        }
+        // LinkerOptions
+        if let Some(as_needed) = config_data.as_needed {
+            self.options.as_needed = as_needed;
+        }
+        if let Some(no_undefined) = config_data.no_undefined {
+            self.options.no_undefined = no_undefined;
+        }
+        if let Some(gc_sections) = config_data.gc_sections {
+            self.options.gc_sections = gc_sections;
+        }
+        if let Some(extra_flags) = config_data.extra_flags {
+            self.options.extra_flags = extra_flags;
+        }
+        // LinkPaths
+        if let Some(lib_paths) = config_data.lib_paths {
+            self.paths.lib_paths = lib_paths;
+        }
+        if let Some(libs) = config_data.libs {
+            self.paths.libs = libs;
+        }
+        if let Some(rpath) = config_data.rpath {
+            self.paths.rpath = rpath;
+        }
+        // Strip
+        if let Some(strip) = config_data.strip {
+            self.strip = strip;
+        }
+    }
+}
+
 impl ToCompilerArgs for LinkerConfig {
     fn to_args(&self) -> Vec<String> {
         let mut args = self.mode.to_args();
@@ -877,6 +1159,12 @@ impl Default for BuildSettings {
 
 impl BuildSettings {
     /// Release build: O3, LTO, strip symbols, strict warnings
+    
+    // FIXME: 
+    pub fn set_langx(&mut self, langx: LangX) {
+        self.language.standard = langx;
+    }
+
     pub fn release() -> Self {
         BuildSettings {
             preprocessor: {
@@ -955,6 +1243,29 @@ impl BuildSettings {
     }
 }
 
+impl FromBuildConfigs<BuildProfileConfig> for BuildSettings {
+    fn from_build_config(&mut self, mut config_data: BuildProfileConfig) {
+        if let Some(preprocessor_cfg) = config_data.preprocessor.take() {
+            self.preprocessor.from_build_config(preprocessor_cfg);
+        }
+        if let Some(language_cfg) = config_data.language.take() {
+            self.language.from_build_config(language_cfg);
+        }
+        if let Some(optimization_cfg) = config_data.optimization.take() {
+            self.optimization.from_build_config(optimization_cfg);
+        }
+        if let Some(diagnostics_cfg) = config_data.diagnostics.take() {
+            self.diagnostics.from_build_config(diagnostics_cfg);
+        }
+        if let Some(linking_cfg) = config_data.linking.take() {
+            self.linking.from_build_config(linking_cfg);
+        }
+        if let Some(control_cfg) = config_data.control.take() {
+            self.control.from_build_config(control_cfg);
+        }
+    }
+}
+
 impl ToCompilerArgs for BuildSettings {
     fn to_args(&self) -> Vec<String> {
         let mut args = Vec::new();
@@ -976,4 +1287,153 @@ impl ToCompilerArgs for BuildSettings {
 
         args
     }
+}
+
+pub fn build_profile_as_per(profile_name: &Option<String>) -> BuildSettings {
+    match profile_name {
+        Some(profile) => {
+            match profile.to_lowercase().as_str() {
+                profile  if profile.starts_with("release") => {
+                    BuildSettings::release()
+                }
+                profile if profile.starts_with("debug") => BuildSettings::debug(),
+                profile if profile.starts_with("fast") => BuildSettings::fast(),
+                profile if profile.starts_with("object") => BuildSettings::object(),
+                _ => BuildSettings::default(),
+            }
+        }
+        None => BuildSettings::default(),
+    }
+}
+
+
+//-----------------------TOML COFIGURABLE STRUCTS-----------------------//
+// USER CONFIGURABLE BUILD PROFILE STRUCTS FOR SERDE
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BuildProfileConfig {
+    pub preprocessor: Option<PreprocessorConfigConfig>,
+    pub language: Option<LanguageConfigConfig>,
+    pub optimization: Option<OptimizationConfigConfig>,
+    pub diagnostics: Option<DiagnosticConfigConfig>,
+    pub linking: Option<LinkerConfigConfig>,
+    pub control: Option<ControlConfigConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BuildProfileConfigs {
+    pub profiles: HashMap<String, BuildProfileConfig>,
+}
+
+//REVIEW: need to review it , need to consider the usage and allowed profiles names as `release`, `debug`, `fast, `object`
+impl BuildProfileConfigs {
+    pub fn get(&self, profile_name: &str) -> Option<&BuildProfileConfig> {
+        self.profiles.get(profile_name)
+    }
+}
+
+
+// SUB CONFIGS
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PreprocessorConfigConfig {
+    pub defines: Option<Vec<String>>,
+    pub undefines: Option<Vec<String>>,
+}
+
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct LanguageConfigConfig {
+    pub langx   : Option<LangX>,
+    pub exception: Option<LangException>,
+    pub strict_checking: Option<bool>,
+    pub lax_vector_conversions: Option<bool>,
+}
+
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MachineTargetConfig {
+    pub target_triple: Option<String>,
+    pub cpu: Option<String>,
+    pub features: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OptimizationOptionConfig {
+    pub level: Option<OptLevel>,
+    pub march: Option<String>,
+    pub mtune: Option<String>,
+    pub lto: Option<Lto>,
+    pub fpic: Option<bool>,
+    pub funroll_loops: Option<bool>,
+    pub fomit_frame_pointer: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OptimizationConfigConfig {
+    pub options: Option<OptimizationOptionConfig>,
+    pub target: Option<MachineTargetConfig>,
+}
+
+
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DiagnosticConfigConfig {
+    pub debug_level: Option<DebugLevel>,
+    pub wall: Option<bool>,
+    pub wextra: Option<bool>,
+    pub werror: Option<bool>,
+    pub wpedantic: Option<bool>,
+    pub pedantic_errors: Option<bool>,
+    pub sanitizer_address: Option<bool>,
+    pub sanitizer_thread: Option<bool>,
+    pub sanitizer_memory: Option<bool>,
+    pub sanitizer_undefined: Option<bool>,
+    pub sanitizer_leak: Option<bool>,
+}
+
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LinkerConfigConfig {
+    pub mode: Option<LinkMode>,
+    pub static_libgcc: Option<bool>,
+    pub static_libstdcpp: Option<bool>,
+    pub pthread: Option<bool>,
+    pub abi_version: Option<String>,
+    pub no_gnu_unique: Option<bool>,
+    pub no_common: Option<bool>,
+    pub as_needed: Option<bool>,
+    pub no_undefined: Option<bool>,
+    pub gc_sections: Option<bool>,
+    pub extra_flags: Option<Vec<String>>,
+    pub lib_paths: Option<Vec<String>>,
+    pub libs: Option<Vec<String>>,
+    pub rpath: Option<Vec<String>>,
+    pub strip: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CompilationControlConfig {
+    pub compilation_mode: Option<CompilationMode>,
+    pub dependency_info: Option<DependencyInfoBuild>,
+    pub use_pipe: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LoggingOptionsConfig {
+    pub verbose: Option<bool>,
+    pub show_commands: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ControlConfigConfig {
+    pub control: Option<CompilationControlConfig>,
+    pub logging: Option<LoggingOptionsConfig>,
 }
