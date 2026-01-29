@@ -4,6 +4,7 @@ use super::trailt::ToCompilerArgs;
 use crate::config::Configs;
 use crate::state::ProjectStructure;
 
+//TODO: need to add the prevention for the no file args case and only dir args case and only header files case
 pub struct Compiler {
     pub compiler_path: String,
     pub main_path: String,
@@ -90,10 +91,15 @@ impl Compiler {
     ) -> Result<String, String> {
         todo!("compile with options not implemented yet")
     }
+    
     pub fn compile(&self) -> Result<String, String> {
         use std::fs;
         use std::path::Path;
         use std::process::Command;
+        
+        if self.include_files.source_files.is_empty() {
+            return Err("No source files provided for compilation.".to_string());
+        }
 
         // Ensure the build directory exists
         if let Some(parent) = Path::new(&self.build_name).parent() {
@@ -104,6 +110,30 @@ impl Compiler {
             }
         }
 
+        #[cfg(any(test, debug_assertions))]
+        let output = {
+            println!("Compiling with command:");
+            let mut debug_command = format!("{}", &self.compiler_path);
+            for arg in self.settings.to_args() {
+                debug_command.push_str(&format!(" {}", arg));
+            }
+            for arg in self.include_files.to_args() {
+                debug_command.push_str(&format!(" {}", arg));
+            }
+            debug_command.push_str(&format!(" -o {}", &self.build_name));
+            println!("[Compiler: compile : g++ commands : {}", debug_command);
+
+            let mut cmd = Command::new(&self.compiler_path);
+            cmd.args(self.settings.to_args())
+                .args(self.include_files.to_args())
+                .arg("-o")
+                .arg(&self.build_name);
+            println!("\t [Compiler : compile]: Command struct built");
+            dbg!(&cmd);
+            cmd.output()
+        };
+
+        #[cfg(not(any(test, debug_assertions)))]
         let output = Command::new(&self.compiler_path)
             // Add flags from build settings first (standards, -fsyntax-only, etc.)
             .args(self.settings.to_args())

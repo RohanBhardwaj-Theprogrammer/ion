@@ -1,5 +1,6 @@
 use crate::cmd_parser::cmd::Type;
 
+#[derive(Clone, Debug)]
 pub struct ParsedCommand {
     pub command_type: Type,
     pub args: Vec<String>, // no ref , to avoid lifetime issues

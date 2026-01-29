@@ -1,7 +1,8 @@
 use chrono::Local;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+// REVIEW: need to make it more robout
 pub fn is_cbuild_project(path: &str) -> bool {
     // let project_path = format!("{}/.{}", path, crate::constants::PROGRAM_NAME); skipped  in favor of Path operations
     let project_path = Path::new(path).join(crate::constants::PROGRAM_NAME);
@@ -91,13 +92,21 @@ pub fn local_time() -> String {
     now.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-pub fn find_cbuild(start_path: &str) -> Option<String> {
-    let mut current_path = Path::new(start_path).to_path_buf();
+pub fn find_cbuild(start_path: &str) -> Option<PathBuf> {
+    let mut current_path = Path::new(start_path).to_path_buf().canonicalize().ok()?;
+    #[cfg(any(test, debug_assertions))]
+    {
+        println!(
+            "[find_cbuild ] : \tStarting search for .{} from {}",
+            crate::constants::PROGRAM_NAME,
+            current_path.display()
+        );
+    }
 
     while let Some(parent) = current_path.parent() {
         let dot_cbuild = current_path.join(format!(".{}", crate::constants::PROGRAM_NAME));
         if dot_cbuild.exists() {
-            return current_path.to_str().map(|s| s.to_string());
+            return Some(current_path);
         }
         current_path = parent.to_path_buf();
     }

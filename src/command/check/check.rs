@@ -4,7 +4,8 @@ use crate::cmd_parser::cmd::Type;
 use crate::cmd_parser::parser::ParsedCommand;
 use crate::config::Configs;
 
-struct CheckArgs {
+#[derive(Clone, Debug)]
+pub struct CheckArgs {
     pub file_path: PathBuf,
     pub std: Option<usize>,
     pub help_flag: bool,
@@ -91,7 +92,21 @@ pub fn check(
     configs: &Configs,
     project_structure: &mut crate::state::structure::ProjectStructure,
 ) -> Result<String, String> {
+    #[cfg(any(test, debug_assertions))]
+    {
+        println!("[Check : check ] : ParsedCommand : ");
+        dbg!(&args);
+    }
     let check_args = check_parser(&args, configs, project_structure);
+
+    #[cfg(any(test, debug_assertions))]
+    {
+        use crate::command::check;
+
+        println!("[Check : check ] : CheckArgs : ");
+        let check_args: check::CheckArgs = check_args.clone();
+        dbg!(&check_args);
+    }
     execute(&check_args, configs, project_structure)
 }
 

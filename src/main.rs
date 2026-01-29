@@ -1,27 +1,26 @@
-use std::path::PathBuf;
 
 use ion::cmd_parser::parser::parse_args;
 use ion::command;
 use ion::config::Configs;
-use ion::state;
 use ion::state::ProjectStructure;
 use ion::utils;
 
 fn main() {
-    //first intialize the cofigs  and //FIXME: all these two to be done in the async or parallel way
+    let mut configs: Configs = match utils::find_cbuild(".") {
+        Some(path) => Configs::Init(path)
+            .expect("[unexepcted error] : encountered unexpeted error, while parsing the configs "),
+        None => {
+            eprintln!("[warning] :\t Could not find the .{} file in the current or parent directories. defaulting to cwd.", ion::constants::PROGRAM_NAME);
+            let current_dir =
+                std::env::current_dir().expect("[Path Erros]: Unable to resolve Paths");
+            Configs::default(current_dir)
+        }
+    };
 
-    let project_root = utils::find_cbuild(".");
-    let mut project_structure: ProjectStructure;
-    let mut configs: Configs;
+    let mut project_structure = ProjectStructure::new(&configs);
 
-    if project_root.is_none() {
-        configs = Configs::default(PathBuf::from("."));
-        project_structure = state::structure::ProjectStructure::none();
-    } else {
-        let root = project_root.as_deref().unwrap_or(".");
-        configs = Configs::default(PathBuf::from(root));
-        project_structure = state::structure::ProjectStructure::new(&configs);
-    }
+    #[cfg(any(test, debug_assertions))]
+    project_structure.debug_print();
 
     // takes the command line arguments and parses them
     let cli_args = std::env::args().collect::<Vec<String>>();

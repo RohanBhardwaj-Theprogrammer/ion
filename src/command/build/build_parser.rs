@@ -4,9 +4,10 @@ use crate::cmd_parser::{cmd::Type, parser::ParsedCommand};
 use crate::command::run::run_parser::parse_file_name;
 use crate::compiler::Compiler;
 use crate::config::Configs;
-use crate::utils::is_numeric;
+use crate::utils::is_numeric; // REVIEW: is this needed anywhere ?
 
-struct BuildArgs {
+#[derive(Clone, Debug)]
+pub struct BuildArgs {
     file_name: PathBuf,
     opt_level: u8,
     std: u8,
@@ -17,6 +18,16 @@ struct BuildArgs {
     interactive_flag: bool,
 }
 
+/// parse build command from the ParsedCommand struct
+/// Grammer: `build [previousCommand] | <fileName | int | "" | .> [-opt <int>] [-std <int>] [-I <includePath> ...] [-objects <objectPath> ...] | <--profileName> | <--help | -help | -h> | <-interactive | -i>`
+/// # Arguments
+/// * `args` - ParsedCommand struct containing command type and arguments
+/// * `configs` - Configs struct containing configuration settings
+/// * `project_structure` - mutable reference to ProjectStructure struct
+/// # Returns
+/// * `BuildArgs` - struct containing parsed build arguments
+/// # Panics
+/// Panics if the command type is not `Build`.
 pub fn build_parser(
     args: &ParsedCommand,
     configs: &Configs,
@@ -89,23 +100,43 @@ fn execute(
     }
 
     let file_name = &build_args.file_name;
-    let file_name_str = file_name.to_str().unwrap_or("");
+    let entry_file_name = file_name.to_str().unwrap_or("");
     let opt_level = build_args.opt_level;
     let std = build_args.std;
     let i_extra = &build_args.i_extra;
+    #[cfg(any(test, debug_assertions))]
     let build_profile = &build_args.build_profile;
-
+    
     let build_settings = crate::compiler::build_settings::BuildSettings::release();
-    let deps = crate::deps::DependencyGraph::new(file_name_str, project_structure);
+    let deps = crate::deps::DependencyGraph::new(entry_file_name, project_structure);
     let include_files = crate::compiler::includes::IncludeFiles::new(
         &deps,
         &configs,
         project_structure,
-        file_name_str,
+        entry_file_name,
     );
 
+    #[cfg(any(test, debug_assertions))]
+    {
+        println!("Build -> execute");
+        println!("---------------- given build args ----------------");
+        dbg!(build_args);
+        dbg!(entry_file_name);
+        dbg!(opt_level);
+        dbg!(std);
+        dbg!(i_extra);
+        dbg!(build_profile);
+        println!();
+        println!("\t [Build Settings]");
+        dbg!(&build_settings);
+        println!("\t [Dependency Graph]");
+        dbg!(&deps);
+        println!("\t [Include Files]");
+        dbg!(&include_files);
+    }
+
     let compiler = Compiler::new(
-        file_name_str,
+        entry_file_name,
         include_files,
         build_settings,
         &configs,
@@ -134,9 +165,21 @@ pub fn build(
     configs: &Configs,
     project_structure: &mut crate::state::structure::ProjectStructure,
 ) -> Result<String, String> {
+    #[cfg(any(test, debug_assertions))]
+    {
+        let args_clone = args.clone();
+        dbg!(args_clone);
+    }
+
     let build_args = build_parser(&args, configs, project_structure);
     if build_args.interactive_flag {
         return Err("Interactive mode not implemented yet".to_string());
+    }
+
+    #[cfg(any(test, debug_assertions))]
+    {
+        let args_clone = build_args.clone();
+        dbg!(args_clone);
     }
 
     execute(&build_args, configs, project_structure)

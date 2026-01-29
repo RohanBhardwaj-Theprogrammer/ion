@@ -11,21 +11,23 @@ run "" | <path> [args] [buildProfile] | <--help | -h | -help> | --config < { [-s
 
 */
 
-enum InputSource {
+#[derive(Clone, Debug)]
+pub enum InputSource {
     IString,
     File(String),
     LastIn(String),
     Default,
 }
-
-enum OutputDestination {
+#[derive(Clone, Debug)]
+pub enum OutputDestination {
     OString,
     File(String),
     LastOut(String),
     Default,
 }
 
-struct RunArgs {
+#[derive(Clone, Debug)]
+pub struct RunArgs {
     pub file_name: PathBuf,
     pub std: Option<u8>,
     pub build_profile: Option<String>,
@@ -174,6 +176,26 @@ fn execute(
     let include_files =
         compiler::includes::IncludeFiles::new(&deps, configs, project_structure, file_name_str);
 
+    #[cfg(any(test, debug_assertions))]
+    {
+        println!("Run -> execute");
+        println!("---------------- given run args ----------------");
+        dbg!(&run_args);
+        dbg!(file_name_str);
+        dbg!(std);
+        dbg!(input);
+        dbg!(output);
+        dbg!(program_args);
+
+        println!(" [build settings] : ");
+        dbg!(&build_settings);
+
+        println!(" [dependency graph] : ");
+        dbg!(&deps);
+        println!(" [include files] : ");
+        dbg!(&include_files);
+    }
+
     // Construct the Compiler via its constructor which will use `configs` to resolve the compiler path
     let compiler = compiler::Compiler::new(
         file_name_str,
@@ -184,14 +206,19 @@ fn execute(
     );
 
     let result = compiler.compile();
+    #[cfg(any(test, debug_assertions))]
+    {
+        println!("\t [Run : execute] : Compilation result : ");
+        dbg!(&result);
+    }
 
     match result {
         Ok(binary_path) => {
             use std::process::Command;
             let mut cmd = Command::new(binary_path);
-
-            if !configs.get_root_path().as_os_str().is_empty() {
-                cmd.current_dir(configs.get_root_path());
+            #[cfg(any(test, debug_assertions))]
+            {
+                dbg!(&cmd);
             }
             // Handle input redirection
             match input {
@@ -237,8 +264,16 @@ fn execute(
                 }
             }
 
+            let child_process = cmd.spawn().expect("Failed to spawn process");
+            #[cfg(any(test, debug_assertions))]
+            {
+                println!("\t [Run : execute] : Spawned child process : ");
+                dbg!(&child_process);
+            }
+
+            let output = child_process.wait_with_output();
             // Actually run the command
-            match cmd.output() {
+            match output {
                 Ok(output) => {
                     println!("Program exited with status: {}", output.status);
                     Ok(format!("Program exited with status: {}", output.status))
@@ -262,8 +297,19 @@ pub fn run(
     configs: &Configs,
     project_structure: &mut ProjectStructure,
 ) -> Result<String, String> {
-    #[allow(unused_mut)]
-    let mut run_args = run_parser(&args, configs, project_structure);
+    #[cfg(any(test, debug_assertions))]
+    {
+        println!("\t [Run] : ");
+        let args_clone = args.clone();
+        dbg!(args_clone);
+    }
+    let run_args = run_parser(&args, configs, project_structure);
+
+    #[cfg(any(test, debug_assertions))]
+    {
+        let run_args_clone = run_args.clone();
+        dbg!(run_args_clone);
+    }
 
     if run_args.interactive_flag {
         return Err("Interactive mode not implemented yet".to_string());

@@ -3,7 +3,7 @@ use crate::utils::is_cbuild_project;
 use std::fs;
 use std::path::Path;
 
-pub fn generate_dotfile(path: &str, force: bool) -> Result<(), String> {
+pub fn generate_dotfile(path: &str, force: bool) -> Result<std::path::PathBuf, String> {
     let is_project = is_cbuild_project(path);
 
     if is_project && force {
@@ -15,11 +15,9 @@ pub fn generate_dotfile(path: &str, force: bool) -> Result<(), String> {
         ));
     }
 
-    let dotfolder = Path::new(path).join(crate::constants::PROGRAM_NAME);
+    let dotfolder = Path::new(path).join(format!(".{}", crate::constants::PROGRAM_NAME));
 
     fs::create_dir_all(&dotfolder).map_err(|e| e.to_string())?;
-    // just a marker file for now
-    let info_file = dotfolder.join(".info");
 
     #[cfg(any(test, debug_assertions))]
     {
@@ -28,39 +26,27 @@ pub fn generate_dotfile(path: &str, force: bool) -> Result<(), String> {
             path, force
         );
         println!(" dotfolder path : {} ", dotfolder.display());
-        println!(" info_file path : {} ", info_file.display());
+
         println!(" Debug Info : {} ", debug_string);
 
         println!(" Functions being called is generate_dotfile ");
     }
-
-    fs::write(
-        info_file,
-        format!(
-            "created at {} , on {}",
-            path,
-            crate::utils::chrono::time_stamp()
-        ),
-    )
-    .map_err(|e| e.to_string())?;
-
-    Ok(())
+    Ok(dotfolder)
 }
 
 pub fn generate_project_structure(
     path: &Path,
     structure_path: Option<&Path>,
-    lang: LangType,
+    lang: &LangType,
     force: bool,
 ) -> Result<(), String> {
     if let Some(structure_path) = structure_path {
         sketch::generate_custom_structure(structure_path, path, force)
     } else {
-        sketch::structure_at(Path::new(path), lang, force)
+        sketch::std_structure_at(Path::new(path), lang, force)
     }
 }
 
-// currenlty stub
 pub mod sketch {
     use std::fs;
     use std::path::Path;
@@ -96,6 +82,7 @@ pub mod sketch {
      *
      * }
      */
+
     #[derive(Debug, Deserialize)]
     struct CustomProjectStructure {
         name: String,
@@ -103,15 +90,15 @@ pub mod sketch {
         files: Option<Vec<String>>,
     }
 
-    pub fn structure_at(path: &Path, lang: LangType, force: bool) -> Result<(), String> {
-        // For production, consider using logging instead of println! or remove this message.
+    pub fn std_structure_at(path: &Path, lang: &LangType, force: bool) -> Result<(), String> {
+        #[cfg(any(test, debug_assertions))]
         println!(
             " =======================================\n                    Only support fixed type yet \n                 ======================================="
         );
 
         let main_file = path.join("src").join(format!(
             "main.{}",
-            match lang {
+            match &lang {
                 LangType::C => "c",
                 _ => "cpp",
             }
@@ -182,7 +169,10 @@ pub mod sketch {
         let base_path = target_path.to_path_buf();
         println!(" Structure Preview : ");
         tree_view(&custom_format);
-        println!(" \n Proceeding to create structure at : {} ", base_path.display());
+        println!(
+            " \n Proceeding to create structure at : {} ",
+            base_path.display()
+        );
         create_from_structure(&custom_format, &base_path)
     }
 
@@ -192,7 +182,10 @@ pub mod sketch {
     ) -> Result<(), String> {
         // safe handling to avoid double joining
         let dir_path = {
-            if target_path.ends_with(&structure.name) {
+            if target_path.ends_with(&structure.name)
+                || structure.name.is_empty()
+                || structure.name == "."
+            {
                 target_path.to_path_buf()
             } else {
                 target_path.join(&structure.name)
@@ -355,7 +348,7 @@ mod tests {
         let temp_dir = "test_structure_at";
         fs::create_dir_all(temp_dir).unwrap();
 
-        sketch::structure_at(Path::new(temp_dir), LangType::C, true).unwrap();
+        sketch::std_structure_at(Path::new(temp_dir), &LangType::C, true).unwrap();
 
         assert!(Path::new(&format!("{}/src", temp_dir)).exists());
         assert!(Path::new(&format!("{}/include", temp_dir)).exists());
@@ -367,7 +360,7 @@ mod tests {
         let temp_dir = "test_structure_no_force";
         fs::create_dir_all(format!("{}/src", temp_dir)).unwrap();
 
-        let result = sketch::structure_at(Path::new(temp_dir), LangType::Cpp, false);
+        let result = sketch::std_structure_at(Path::new(temp_dir), &LangType::Cpp, false);
         assert!(result.is_err());
     }
 

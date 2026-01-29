@@ -1,3 +1,5 @@
+use toml::ser;
+
 use crate::cmd_parser::{cmd::Type, parser::ParsedCommand};
 use crate::config::Configs;
 use crate::utils::parse_path_arg;
@@ -14,9 +16,9 @@ pub enum InitArgsType {
     Interactive,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub enum LangType {
-    Auto,
+    // Auto,
     C,
     Cpp,
 }
@@ -41,7 +43,7 @@ impl InitArgs {
     pub fn new() -> Self {
         // initialize with default values
         InitArgs {
-            lang: LangType::Auto,
+            lang: LangType::Cpp,
             path: String::from("."),
             custom_structure: None,
             force: false,
@@ -59,7 +61,7 @@ impl InitArgs {
         match lang_arg {
             "c" => self.lang = LangType::C,
             "cpp" | "c++" | "cxx" => self.lang = LangType::Cpp,
-            _ => self.lang = LangType::Auto,
+            _ => self.lang = LangType::Cpp, // default to cpp
         }
     }
 
@@ -164,7 +166,7 @@ pub fn execute(init_args: InitArgs, _configs: &Configs) -> Result<String, String
         );
     }
 
-    create_init_fs::generate_dotfile(&init_args.path, init_args.force)?;
+    let dot_folder = create_init_fs::generate_dotfile(&init_args.path, init_args.force)?;
 
     let skip_default_structure = init_args
         .custom_structure
@@ -174,20 +176,37 @@ pub fn execute(init_args: InitArgs, _configs: &Configs) -> Result<String, String
 
     let project_path = Path::new(&init_args.path);
 
+    //Review:  here we pass lang by reference to avoid ownership issues
     if !skip_default_structure {
         if let Some(custom) = init_args.custom_structure.as_ref() {
             if let Some(structure_path) = custom.path.as_ref() {
+                let custom_structure_path = Path::new(structure_path);
                 create_init_fs::generate_project_structure(
                     project_path,
-                    Some(Path::new(structure_path)),
-                    init_args.lang,
+                    Some(custom_structure_path),
+                    &init_args.lang,
                     init_args.force,
                 )?;
+
+                // moving the custom folder inside the dot folder
+
+                let custom_structure_file_cp =
+                    project_path.join(custom_structure_path.file_name().unwrap());
+                match std::fs::copy(custom_structure_path, custom_structure_file_cp) {
+                    Ok(_) => (),
+                    Err(e) => {
+                        println!(
+                            "Failed to copy custom structure file to project .{} folder: {}",
+                            crate::constants::PROGRAM_NAME,
+                            e
+                        );
+                    }
+                };
             } else {
                 create_init_fs::generate_project_structure(
                     project_path,
                     None,
-                    init_args.lang,
+                    &init_args.lang,
                     init_args.force,
                 )?;
             }
@@ -195,11 +214,17 @@ pub fn execute(init_args: InitArgs, _configs: &Configs) -> Result<String, String
             create_init_fs::generate_project_structure(
                 project_path,
                 None,
-                init_args.lang,
+                &init_args.lang.clone(),
                 init_args.force,
             )?;
         }
     }
+
+    Configs::new(
+        Path::new(&init_args.path),
+        Some(&dot_folder),
+        init_args.lang,
+    )?;
 
     println!("Initialized cbuild project at {}", init_args.path);
     Ok("Project initialized successfully".to_string())
@@ -413,7 +438,7 @@ mod tests {
     fn uses_defaults_when_no_args() {
         let result = parse_init_args(parsed_slice(&[]));
 
-        assert!(matches!(result.lang, LangType::Auto));
+        assert!(matches!(result.lang, LangType::Cpp));
         assert_eq!(result.path, ".");
         assert!(!result.force);
         assert!(!result.help);

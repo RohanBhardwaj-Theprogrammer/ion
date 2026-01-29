@@ -2,6 +2,8 @@ use crate::compiler::ToCompilerArgs;
 use crate::config::Configs;
 use crate::deps::DependencyGraph;
 use crate::state::structure::ProjectStructure;
+
+#[derive(Clone, Debug)]
 pub struct IncludeFiles {
     pub main_file: String,
     pub header_files: Vec<String>,

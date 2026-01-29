@@ -22,6 +22,8 @@ use crate::config::Configs;
 /// Notes:
 /// - The stored path is absolute (canonicalized when possible).
 /// - The file type is inferred from the extension via [`SourceFileType::from_extension`].
+
+#[derive(Debug, Clone)]
 pub struct FileNode {
     file_type: SourceFileType,
     path: PathBuf, // absolute (usually canonical) path
@@ -66,6 +68,8 @@ fn test_file_node_ops() {
 ///
 /// This type is an implementation detail of [`ProjectStructure`].
 /// The `path` is stored root-relative.
+
+#[derive(Debug, Clone)]
 struct DirNode {
     path: PathBuf, // root-relative path of this directory
 
@@ -189,6 +193,8 @@ fn test_dir_node_ops() {
 /// // Query some basic facts
 /// assert!(!structure.get_all_files().is_empty());
 /// ```
+
+#[derive(Debug, Clone)]
 pub struct ProjectStructure {
     entry_file: Option<FileNode>,
     #[allow(dead_code)]
@@ -957,7 +963,7 @@ impl ProjectStructure {
 
     #[cfg(any(debug_assertions, test))]
     #[allow(dead_code)]
-    fn print_internals(&self) {
+    pub fn debug_print(&self) {
         use crate::utils::path_utils;
 
         fn pretty_abs_display(path: &Path) -> String {
@@ -1708,6 +1714,6 @@ mod tests {
     #[test]
     fn print_structure_does_not_panic() {
         let (_configs, structure) = make_test_project_structure();
-        structure.print_internals();
+        structure.debug_print();
     }
 }

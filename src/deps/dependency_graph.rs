@@ -6,6 +6,8 @@ use super::headers_utils::{get_header, is_main_file, is_std_header};
 use crate::state::filetype::SourceFileType;
 use crate::state::structure::ProjectStructure;
 
+/// Returns the `SourceFileType` for a given file path based on its extension.
+/// Unknown extensions are mapped to `SourceFileType::Unknown`.
 fn get_file_type(file_path: &str) -> SourceFileType {
     std::path::Path::new(file_path)
         .extension()
@@ -14,6 +16,10 @@ fn get_file_type(file_path: &str) -> SourceFileType {
         .unwrap_or(SourceFileType::Unknown)
 }
 
+/// Represents a node in the dependency graph, corresponding to a file (source/header).
+/// Stores file path, type, dependencies, parent, and implementation file (for headers).
+
+#[derive(Debug, Clone)]
 struct FileNode {
     file_path: PathBuf,
     file_type: SourceFileType,
@@ -22,6 +28,10 @@ struct FileNode {
     parent: Option<usize>,
 }
 
+/// Represents the dependency graph of a C/C++ project.
+/// Tracks all files (sources/headers), their dependencies, and include directories.
+
+#[derive(Debug, Clone)]
 pub struct DependencyGraph {
     main_file_idx: usize,
     nodes: Vec<FileNode>,
@@ -31,12 +41,16 @@ pub struct DependencyGraph {
 
 impl DependencyGraph {
     // assumes that projectStructure has cannonicalized paths
-    pub fn new(main_file_path: &str, project_structure: &ProjectStructure) -> Self {
-        // if !is_main_file(main_file_path) {
-        //     //TODO: implement it later
-        //     todo!("not implemented the functionality for non int main file directly");
-        // }
 
+    /// Constructs a new `DependencyGraph` for the given main file and project structure.
+    ///
+    /// # Arguments
+    /// * `main_file_path` - Path to the main source file (entry point).
+    /// * `project_structure` - Project structure for resolving headers and includes.
+    ///
+    /// # Returns
+    /// * `DependencyGraph` - The constructed dependency graph rooted at the main file.
+    pub fn new(main_file_path: &str, project_structure: &ProjectStructure) -> Self {
         let main_file_idx = 0usize;
         let file_type = get_file_type(main_file_path);
         let mut nodes: Vec<FileNode> = Vec::new();
@@ -96,18 +110,20 @@ impl DependencyGraph {
         };
     }
 
-    // generate node recursively
-    // it assumes , it get the canonicalized file path
-    // TODO: TO BE $REAED AGAIN THIS
-    /// Recursively create a node for the dependency graph.
-    /// This function ensures that each file is only processed once (by canonical path),
-    /// and builds out the dependency and implementation relationships for headers and sources.
+    /// Recursively creates a node in the dependency graph for a given file.
     ///
-    /// parent_idx: The index of the parent node in the graph.
-    /// file_path: The path to the file to add.
-    /// project_structure: The project structure for header/source lookup.
-    /// nodes: The vector of FileNode objects (the graph).
-    /// file_to_idx: Map from canonical file path to node index.
+    /// Ensures each file is only processed once (by canonical path), and builds out
+    /// dependency and implementation relationships for headers and sources.
+    ///
+    /// # Arguments
+    /// * `parent_idx` - Index of the parent node in the graph.
+    /// * `file_path` - Path to the file to add.
+    /// * `project_structure` - Project structure for header/source lookup.
+    /// * `nodes` - Mutable reference to the vector of `FileNode` objects (the graph).
+    /// * `file_to_idx` - Mutable map from canonical file path to node index.
+    ///
+    /// # Returns
+    /// * `usize` - Index of the created or existing node in the graph.
     fn create_node_rec(
         parent_idx: usize,
         file_path: &str,
@@ -180,6 +196,8 @@ impl DependencyGraph {
         }
         current_idx
     }
+
+    /// Returns the list of include directories for the project as strings.
     pub fn get_main_includes(&self) -> Vec<String> {
         return self
             .includes_dir
@@ -187,6 +205,14 @@ impl DependencyGraph {
             .map(|p| p.to_string_lossy().to_string())
             .collect();
     }
+
+    /// Returns all header files included (directly or indirectly) from the given file.
+    ///
+    /// # Arguments
+    /// * `file_path` - Path to the file to analyze.
+    ///
+    /// # Returns
+    /// * `Vec<String>` - List of included header file paths as strings.
     pub fn get_includes_from(&self, file_path: &str) -> Vec<String> {
         let canonical_path =
             fs::canonicalize(file_path).unwrap_or_else(|_| PathBuf::from(file_path));
@@ -216,6 +242,14 @@ impl DependencyGraph {
         }
         includes.into_iter().collect()
     }
+
+    /// Returns all source files (non-header) that are dependencies of the given file.
+    ///
+    /// # Arguments
+    /// * `file_path` - Path to the file to analyze.
+    ///
+    /// # Returns
+    /// * `Vec<String>` - List of dependent source file paths as strings.
     pub fn get_source_files_from(&self, file_path: &str) -> Vec<String> {
         let canonical_path =
             fs::canonicalize(file_path).unwrap_or_else(|_| PathBuf::from(file_path));
@@ -254,10 +288,32 @@ impl DependencyGraph {
         }
         source_files.into_iter().collect()
     }
+
+    /// Returns all source files (non-header) that are dependencies of the main file.
     pub fn get_all_source_files(&self) -> Vec<String> {
         let main_file_path = &self.nodes[self.main_file_idx].file_path;
         let main_file_path_str = main_file_path.to_str().expect("NOT A VALID PATH");
 
         return self.get_source_files_from(main_file_path_str);
     }
+
+    #[cfg(any(test, debug_assertions))]
+    pub fn debug_print(&self) {
+        for (idx, node) in self.nodes.iter().enumerate() {
+            println!("Node {}: {:?}", idx, node.file_path);
+            if let Some(deps) = &node.dependencies {
+                for dep_idx in deps {
+                    println!("  -> Dep: {:?}", self.nodes[*dep_idx].file_path);
+                }
+            }
+            if let Some(impl_idx) = node.impl_file {
+                println!("  -> Impl: {:?}", self.nodes[impl_idx].file_path);
+            }
+        }
+    }
 }
+
+//________________________TESTS________________________//
+
+#[cfg(test)]
+mod tests {}

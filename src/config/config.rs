@@ -1,7 +1,22 @@
-use std::{collections::HashSet, fs, path::PathBuf};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use crate::command::init::LangType;
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+struct ProjectConfigs {
+    pub name: Option<String>,
+    pub root: PathBuf,
+    pub lang: Option<LangType>,
+    pub std: Option<usize>,
+    pub main: Option<PathBuf>,
+    pub exclude: Option<Vec<String>>,
+    pub include: Option<Vec<String>>,
+    pub macros: Option<Vec<String>>,
+}
 pub struct BuildConfig {
     pub std: usize,
     pub lang: LangType,
@@ -76,7 +91,8 @@ impl RunConfig {
 // If you need EnvConfigs, LogConfigs, CheckConfigs, define them here. Otherwise, remove these empty structs.
 
 pub struct Configs {
-    root_path: PathBuf,
+    pub configs: ProjectConfigs,
+    pub root_path: PathBuf,
     allowed_extensions: Vec<String>,
     pub run: RunConfig,
     pub build: BuildConfig,
@@ -84,19 +100,83 @@ pub struct Configs {
 }
 
 impl Configs {
-    pub fn new(root_path: PathBuf, allowed_extensions: Vec<String>) -> Self {
-        let build = BuildConfig::new("");
-        let run = RunConfig::default();
+    pub fn Init(root_path: PathBuf) -> Result<Self, String> {
+        let config_path = root_path
+            .join(format!(".{}", crate::constants::PROGRAM_NAME))
+            .join("config.toml");
 
-        Configs {
-            root_path: fs::canonicalize(&root_path).unwrap_or_else(|_| root_path.clone()),
-            allowed_extensions,
-            run,
-            build,
+        let project_config_str = fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read config file: {}", e))?;
+
+        let configs: ProjectConfigs = toml::from_str(&project_config_str)
+            .map_err(|e| format!("Failed to parse config file: {}", e))?;
+
+        Ok(Configs {
+            configs,
+            root_path,
+            allowed_extensions: vec![
+                ".cpp".to_string(),
+                ".c".to_string(),
+                ".hpp".to_string(),
+                ".h".to_string(),
+                ".cc".to_string(),
+                ".cxx".to_string(),
+            ],
+            run: RunConfig::default(),
+            build: BuildConfig::default(),
             excluded_dirs: HashSet::new(),
-        }
+        })
     }
 
+    pub fn new(root_path: &Path, configs_at: Option<&Path>, lang: LangType) -> Result<(), String> {
+        let configs_at_path = match configs_at {
+            Some(path) => fs::canonicalize(path)
+                .map_err(|e| format!("Failed to canonicalize config path: {}", e))?,
+            None => root_path.join(format!(".{}", crate::constants::PROGRAM_NAME)),
+        };
+
+        let project_config = ProjectConfigs {
+            name: root_path
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .map(|s| s.to_string()),
+            root: root_path.to_path_buf(),
+            lang: Some(lang.clone()),
+            std: None,
+            main: None,
+            exclude: None,
+            include: None,
+            macros: None,
+        };
+
+        let toml_string = toml::to_string_pretty(&project_config)
+            .map_err(|e| format!("Failed to serialize config to TOML: {}", e))?;
+
+        match fs::create_dir_all(&configs_at_path) {
+            Ok(_) => {}
+            Err(e) => {
+                return Err(format!(
+                    "Failed to create config directory at {}: {}",
+                    configs_at_path.display(),
+                    e
+                ));
+            }
+        }
+
+        let config_file_path = configs_at_path.join("config.toml");
+
+        fs::write(&config_file_path, toml_string)
+            .map_err(|e| format!("Failed to write config file: {}", e))?;
+
+        #[cfg(any(test, debug_assertions))]
+        {
+            println!("Creating config file at: {}", configs_at_path.display());
+        }
+        Ok(())
+    }
+
+    //XXX: currently a stub to iplemented with the best defaults
     pub fn default(root_path: PathBuf) -> Self {
         let allowed_extensions = vec![
             ".cpp".to_string(),
@@ -119,6 +199,19 @@ impl Configs {
         .collect::<HashSet<String>>();
 
         Configs {
+            configs: ProjectConfigs {
+                name: match root_path.file_stem() {
+                    Some(name) => name.to_str().map(|s| s.to_string()),
+                    None => None,
+                },
+                root: root_path.clone(),
+                lang: Some(LangType::Cpp),
+                std: Some(11),
+                main: None,
+                exclude: None,
+                include: None,
+                macros: None,
+            },
             root_path: root_path,
             allowed_extensions,
             run: RunConfig::default(),
@@ -171,6 +264,16 @@ impl Configs {
         ];
 
         Configs {
+            configs: ProjectConfigs {
+                name: Some("test_project".to_string()),
+                root: PathBuf::from(&root_path),
+                lang: Some(LangType::Cpp),
+                std: Some(11),
+                main: None,
+                exclude: None,
+                include: None,
+                macros: None,
+            },
             root_path: PathBuf::from(root_path),
             allowed_extensions,
             run: RunConfig::default(),
