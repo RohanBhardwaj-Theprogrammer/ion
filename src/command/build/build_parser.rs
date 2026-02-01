@@ -2,10 +2,9 @@ use std::path::PathBuf;
 
 use crate::cmd_parser::{cmd::Type, parser::ParsedCommand};
 use crate::command::run::run_parser::parse_file_name;
-use crate::compiler::{Compiler, LangX};
 use crate::compiler::trailt::FromBuildConfigs;
+use crate::compiler::{Compiler, LangX};
 use crate::config::Configs;
-
 
 #[derive(Clone, Debug)]
 pub struct BuildArgs {
@@ -42,7 +41,7 @@ pub fn build_parser(
         opt_level: None,
         std: None,
         i_extra: Vec::new(),
-        build_profile: Some("Debug".to_string()),
+        build_profile: None,
         help_flag: false,
         interactive_flag: false,
     };
@@ -78,12 +77,11 @@ pub fn build_parser(
             arg if arg.starts_with("--") && arg.len() > 2 => {
                 // e.g. --release, --profileName
                 let profile = &arg[2..];
-                
-                    build_args.build_profile = Some(profile.to_string());
-                
+
+                build_args.build_profile = Some(profile.to_string());
             }
             first => {
-                if !first.starts_with('-') && !first.starts_with("--") && build_args.file_name.as_os_str().is_empty() {
+                if !first.starts_with('-') && build_args.file_name.as_os_str().is_empty() {
                     build_args.file_name = parse_file_name(first, configs, project_structure);
                 }
             }
@@ -104,21 +102,24 @@ fn execute(
     }
 
     let file_name = &build_args.file_name;
-    let entry_file_name = file_name.to_str().expect("[Entry File]: Unable to converts the Types");
+    let entry_file_name = file_name
+        .to_str()
+        .expect("[Entry File]: Unable to converts the Types");
     let opt_level = build_args.opt_level;
     let std = build_args.std;
     let i_extra = &build_args.i_extra;
 
     #[cfg(any(test, debug_assertions))]
     let build_profile = &build_args.build_profile;
-    
-    let  mut build_settings = crate::compiler::build_settings::build_profile_as_per(&build_args.build_profile);
-    if let Some(_profile_name) = &build_args.build_profile {
+
+    let mut build_settings =
+        crate::compiler::build_settings::build_profile_as_per(&build_args.build_profile);
+    if build_args.build_profile.is_some() {
         if let Some(user_build_configs) = configs.get_build_profile(&build_args.build_profile) {
             build_settings.from_build_config(user_build_configs);
         }
     }
-    
+
     //TODO: implement these CLI args properly
     if let Some(_) = opt_level {
         eprintln!("Note: Optimization level from CLI is currently not implemented.\n\tUse a build profile or set it in your configuration file.");
@@ -129,7 +130,6 @@ fn execute(
     if !i_extra.is_empty() {
         eprintln!("Note: Extra include paths (-I/--include) from CLI are currently not implemented.\n\tAdd include paths to your build profile configuration instead.");
     }
-
 
     let deps = crate::deps::DependencyGraph::new(entry_file_name, project_structure);
     let include_files = crate::compiler::includes::IncludeFiles::new(
@@ -169,13 +169,10 @@ fn execute(
     let compile_result = compiler.compile();
 
     match compile_result {
-        Ok(output) => {
-            
-            Ok(format!(
-                "Build Process Completed. Binary at {} : {}",
-                compiler.build_name,output
-            ))
-        }
+        Ok(output) => Ok(format!(
+            "Build Process Completed. Binary at {} : {}",
+            compiler.build_name, output
+        )),
         Err(err) => {
             eprintln!("Build failed. Error: {}", err);
             Err(err)

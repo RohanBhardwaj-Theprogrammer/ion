@@ -91,12 +91,12 @@ impl Compiler {
     ) -> Result<String, String> {
         todo!("compile with options not implemented yet")
     }
-    
+
     pub fn compile(&self) -> Result<String, String> {
         use std::fs;
         use std::path::Path;
         use std::process::Command;
-        
+
         if self.include_files.source_files.is_empty() {
             return Err("No source files provided for compilation.".to_string());
         }
@@ -108,6 +108,10 @@ impl Compiler {
                     return Err(format!("Failed to create build directory: {}", e));
                 }
             }
+        }
+        //REVIEW:
+        if self.build_name == self.main_path {
+            return Err("Output file name cannot be the same as the main source file.".to_string());
         }
 
         #[cfg(any(test, debug_assertions))]

@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{command::init::LangType, compiler::BuildProfileConfigs, compiler::BuildProfileConfig};
+use crate::{command::init::LangType, compiler::BuildProfileConfig, compiler::BuildProfileConfigs};
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 struct ProjectConfigs {
@@ -18,7 +18,7 @@ struct ProjectConfigs {
     pub macros: Option<Vec<String>>,
     pub build_profiles: Option<BuildProfileConfigs>,
 }
-#[derive(Debug,Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BuildConfig {
     pub std: usize,
     pub lang: LangType,
@@ -54,7 +54,7 @@ impl BuildConfig {
     }
 }
 
-#[derive(Debug,Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct RunConfig {
     pub std: usize,
     pub file: String,
@@ -108,29 +108,17 @@ impl Configs {
             .join(format!(".{}", crate::constants::PROGRAM_NAME))
             .join("config.toml");
 
-        let project_config_str = fs::read_to_string(&config_path)
+        let config_str = fs::read_to_string(&config_path)
             .map_err(|e| format!("Failed to read config file: {}", e))?;
 
-        let configs: ProjectConfigs = toml::from_str(&project_config_str)
+        // Try to deserialize the full Configs struct from TOML
+        let mut configs: Configs = toml::from_str(&config_str)
             .map_err(|e| format!("Failed to parse config file: {}", e))?;
 
-        Ok(Configs {
-            configs,
-            root_path,
-            allowed_extensions: vec![
-                ".cpp".to_string(),
-                ".c".to_string(),
-                ".hpp".to_string(),
-                ".h".to_string(),
-                ".cc".to_string(),
-                ".cxx".to_string(),
-            ],
-            run: RunConfig::default(),
-            build: BuildConfig::default(),
-            excluded_dirs: HashSet::new(),
-        })
+        // Overwrite the root_path with the provided one, in case the deserialized one is stale
+        configs.root_path = root_path;
+        Ok(configs)
     }
-
     pub fn new(root_path: &Path, configs_at: Option<&Path>, lang: LangType) -> Result<(), String> {
         let configs_at_path = match configs_at {
             Some(path) => fs::canonicalize(path)
@@ -375,16 +363,18 @@ impl Configs {
     }
 }
 
-
 impl Drop for Configs {
+    //ISSUE: this will alway create the file , even if there is not file exists for the current project and where it does't need to do
+    // need to resolve this problem so that only save the data when there is alrady a file
     fn drop(&mut self) {
         // Serialize the config, but don't panic if it fails
         if let Ok(serialized_configs) = toml::to_string(&self) {
             // Save to .<PROGRAM_NAME>/config.toml in the root path
-            let config_dir = self.root_path.join(format!(".{}", crate::constants::PROGRAM_NAME));
+            let config_dir = self
+                .root_path
+                .join(format!(".{}", crate::constants::PROGRAM_NAME));
             let config_file = config_dir.join("config.toml");
-            // Try to create the directory if it doesn't exist
-            let _ = std::fs::create_dir_all(&config_dir);
+            // leaved the file or folder cretoin so that can only be built if there exists tehfile already to avoid for the non init projects
             let _ = std::fs::write(config_file, serialized_configs);
         }
     }

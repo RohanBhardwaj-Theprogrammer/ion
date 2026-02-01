@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::cmd_parser::parser::ParsedCommand;
 use crate::compiler;
+use crate::compiler::trailt::FromBuildConfigs;
 use crate::config::Configs;
 use crate::state::ProjectStructure;
 use crate::utils::is_numeric;
@@ -79,11 +80,19 @@ pub fn run_parser(
     if args.command_type != crate::cmd_parser::cmd::Type::Run {
         panic!("Invalid command type for run_parser");
     }
-
+    //ALERT:: Need to parse the args properly and set the values accordingly , big refactor needed
+    /*
+          arguments Grammer : run
+    "" |
+    <fileName | int | "" | .> [(-in | <<) <filename>] [(-out | >>) <filename>] [-std <int>] [-- <exe-args>] |
+    <fileName | int | "" | .> [inputFileName] [outputFileName] [-- <exe-args>] |
+    [-help | --help | -h] |
+    --config < { [-std <int>] , [. <lastExe | project.exe>] , [-in <lastIn | default>] , [-out <lastOut | default>] } >
+     */
     let mut run_args = RunArgs {
         file_name: PathBuf::new(),
         std: None,
-        build_profile: None,
+        build_profile: Some("fast".to_string()), // as default profile to speed up the run
         help_flag: false,
         interactive_flag: false,
         input: InputSource::Default,
@@ -141,8 +150,19 @@ pub fn run_parser(
                 run_args.program_args.extend(iter.map(|s| s.to_string()));
                 break;
             }
-            _ => {
-                run_args.file_name = parse_file_name(&arg, configs, project_structure);
+            profile_name if profile_name.starts_with("--") && profile_name.len() > 2 => {
+                let profile_name = &profile_name[2..].to_string();
+                #[cfg(any(test, debug_assertions))]
+                {
+                    println!("Detected build profile from arg: {}", profile_name);
+                }
+                run_args.build_profile = Some(profile_name.to_string());
+            }
+            file_name => {
+                // only the first non-flag argument is considered as file name
+                if !file_name.starts_with('-') && run_args.file_name.as_os_str().is_empty() {
+                    run_args.file_name = parse_file_name(file_name, configs, project_structure);
+                }
             }
         }
     }
@@ -169,7 +189,16 @@ fn execute(
     let output = &run_args.output;
     let program_args = &run_args.program_args;
 
-    let build_settings = crate::compiler::build_settings::BuildSettings::fast();
+    let mut build_settings = crate::compiler::build_settings::build_profile_as_per(&build_profile);
+    if build_profile.is_some() {
+        if let Some(user_build_configs) = configs.get_build_profile(&build_profile) {
+            build_settings.from_build_config(user_build_configs);
+        }
+    }
+
+    if let Some(_) = std {
+        eprintln!("Note: Standard setting from CLI is currently not implemented.\n\tUse a build profile or set it in your configuration file.");
+    }
 
     // Build a dependency graph for the requested main file using the provided project structure
     let deps = crate::deps::DependencyGraph::new(file_name_str, project_structure);
@@ -319,9 +348,11 @@ pub fn run(
 
 //______________________________________TEST ____________________________________
 
-#[cfg(test_)]
+#[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
     #[test]
     fn run_parser_test() {
         let args = ParsedCommand {
@@ -330,6 +361,7 @@ mod tests {
                 "main.cpp".to_string(),
                 "-std".to_string(),
                 "17".to_string(),
+                "--release".to_string(),
                 "-in".to_string(),
                 "input.txt".to_string(),
                 "-out".to_string(),
@@ -342,10 +374,21 @@ mod tests {
         let configs = Configs::test_config(None);
         let mut project_structure = ProjectStructure::new(&configs);
         let run_args = run_parser(&args, &configs, &project_structure);
-        let expected = std::fs::canonicalize(format!("{}/main.cpp", configs.get_root_path()))
-            .unwrap()
-            .to_string_lossy();
-        let actual = run_args.file_name.to_string_lossy();
+        let expected_path = {
+            let mut p = PathBuf::from(configs.get_root_path());
+            p.push("main.cpp");
+            p
+        };
+        let expected = std::fs::canonicalize(&expected_path)
+            .unwrap_or(expected_path)
+            .to_string_lossy()
+            .to_string();
+        let actual = run_args
+            .file_name
+            .canonicalize()
+            .unwrap_or(run_args.file_name.clone())
+            .to_string_lossy()
+            .to_string();
         // Normalize separators for comparison across platforms
         assert_eq!(
             crate::utils::canonicalize_path_separators(&actual),
@@ -402,13 +445,14 @@ mod tests {
             ],
         };
         let configs = Configs::test_config(Some("tests/test_project/config.toml"));
-        let mut project_structure = ProjectStructure::test_new(&configs);
+        let mut project_structure = ProjectStructure::new(&configs);
         let run_args = run_parser(&args, &configs, &project_structure);
 
         let mut project_structure = ProjectStructure::new(&configs);
         let _ = execute(run_args, &configs, &mut project_structure);
 
-        match std::fs::File::open("tests/test_project/output.txt") {
+        let output_path = PathBuf::from_iter(["tests", "test_project", "output.txt"]);
+        match std::fs::File::open(&output_path) {
             Ok(mut file) => {
                 use std::io::Read;
                 let mut contents = String::new();

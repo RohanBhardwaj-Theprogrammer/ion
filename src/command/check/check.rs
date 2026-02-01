@@ -2,12 +2,16 @@ use std::path::PathBuf;
 
 use crate::cmd_parser::cmd::Type;
 use crate::cmd_parser::parser::ParsedCommand;
+use crate::compiler::build_settings;
+use crate::compiler::trailt::FromBuildConfigs;
 use crate::config::Configs;
 
 #[derive(Clone, Debug)]
 pub struct CheckArgs {
     pub file_path: PathBuf,
     pub std: Option<usize>,
+    pub build_profile: Option<String>,
+    pub verboase_flag: bool,
     pub help_flag: bool,
 }
 
@@ -22,8 +26,11 @@ pub fn check_parser(
     let mut check_args = CheckArgs {
         file_path: PathBuf::new(),
         std: None,
+        build_profile: None,
+        verboase_flag: false,
         help_flag: false,
     };
+    let mut file_path_arg = String::new();
     let mut iter = args.args.iter().peekable();
 
     while let Some(arg) = iter.next() {
@@ -38,16 +45,23 @@ pub fn check_parser(
                     check_args.std = val.parse::<usize>().ok();
                 }
             }
-            _ => {
-                // Assume it's the file path
-                check_args.file_path = super::super::run::run_parser::parse_file_name(
-                    &arg,
-                    configs,
-                    project_structure,
-                );
+            "-v" | "--verbose" => {
+                check_args.verboase_flag = true;
+            }
+            profile_name if profile_name.starts_with("--") && profile_name.len() > 2 => {
+                let profile = profile_name[2..].to_string();
+                check_args.build_profile = Some(profile);
+            }
+            file_name => {
+                if !file_name.starts_with("-") && check_args.file_path.as_os_str().is_empty() {
+                    file_path_arg = file_name.to_string();
+                }
             }
         }
     }
+
+    check_args.file_path =
+        super::super::run::run_parser::parse_file_name(&file_path_arg, configs, project_structure);
 
     check_args
 }
@@ -65,14 +79,26 @@ fn execute(
     let file_name = check_args.file_path.clone();
     let file_name_str = file_name.to_str().unwrap_or("");
     let std = check_args.std.unwrap_or(11);
-    use crate::compiler::build_settings::{BuildSettings, CompilationMode};
+    let build_profile = &check_args.build_profile;
+    use crate::compiler::build_settings::{build_profile_as_per, BuildSettings, CompilationMode};
     use crate::compiler::compiler::Compiler;
     use crate::compiler::includes::IncludeFiles;
     use crate::deps::DependencyGraph;
 
-    let mut settings = BuildSettings::default();
+    let mut settings = build_settings::build_profile_as_per(&check_args.build_profile);
+    if let Some(profile_name) = build_profile {
+        if let Some(profile_settings) = configs.get_build_profile(&check_args.build_profile) {
+            settings.from_build_config(profile_settings);
+        }
+    }
     settings.control.control.compilation_mode = CompilationMode::SyntaxCheck;
 
+    if check_args.verboase_flag {
+        settings.control.logging.verbose = true;
+    }
+    if let Some(std_val) = check_args.std {
+        eprintln!("not supported std change for check command, use default or profile std");
+    }
     let deps = DependencyGraph::new(file_name_str, project_structure);
 
     let include_files = IncludeFiles::new(&deps, configs, project_structure, file_name_str);

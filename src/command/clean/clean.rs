@@ -1,5 +1,5 @@
 // Import or define ParsedCommand and Configs as needed
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::cmd_parser::parser::ParsedCommand;
 use crate::config::Configs;
@@ -44,11 +44,12 @@ pub fn clean_parser(args: &ParsedCommand, configs: &Configs) -> CleanArgs {
                 clean_args.force = true;
             }
             _ => {
-                if arg.starts_with("-e") {
-                    let exception = arg.trim_start_matches("-e").trim().to_string();
-                    let exception = trim_quotes(&exception);
-                    clean_args.exceptions.push(exception);
-                } else if arg.starts_with('.') {
+                // if arg.starts_with("-e") {
+                //     let exception = arg.trim_start_matches("-e").trim().to_string();
+                //     let exception = trim_quotes(&exception);
+                //     clean_args.exceptions.push(exception);
+                // } else
+                if arg.starts_with('.') {
                     clean_args.ext.push(arg);
                 }
                 // Ignore unknown arguments for now
@@ -69,29 +70,29 @@ fn execute(
         return Ok("Displayed help information.".to_string());
     }
 
-    if clean_args.all {
-        return Err("Cleaning All is not supported yet due to Security Reasons".to_string());
-    }
+    if clean_args.force && clean_args.all {
+        for ext in &clean_args.ext {
+            let ext_files = project_structure.get_files_with_extension(ext);
 
-    for ext in &clean_args.ext {
-        let ext_files = project_structure.get_files_with_extension(ext);
-
-        let file_paths: Vec<PathBuf> = ext_files.iter().map(|f| f.get_path().clone()).collect();
-        for file_path in file_paths {
-            let file_path_str = file_path.to_string_lossy().to_string();
-            if clean_args.exceptions.contains(&file_path_str) && !clean_args.force {
-                continue;
-            }
-            if let Err(e) = project_structure.remove_file(&file_path) {
-                return Err(format!(
-                    "Failed to remove file {}: {}",
-                    file_path.display(),
-                    e
-                ));
+            let file_paths: Vec<PathBuf> = ext_files.iter().map(|f| f.get_path().clone()).collect();
+            for file_path in file_paths {
+                let file_path_str = file_path.to_string_lossy().to_string();
+                if clean_args.exceptions.contains(&file_path_str) && !clean_args.force {
+                    continue;
+                }
+                if let Err(e) = project_structure.remove_file(&file_path) {
+                    return Err(format!(
+                        "Failed to remove file {}: {}",
+                        file_path.display(),
+                        e
+                    ));
+                }
             }
         }
+    } else if clean_args.force == false {
+        eprintln!("Use --force to delete files with specific extension. No files were deleted.");
     }
-
+    project_structure.remove_dir(Path::new("bin"))?;
     Ok("Clean operation completed.".to_string())
 }
 
@@ -119,7 +120,12 @@ pub fn clean(
     configs: &Configs,
     project_structure: &mut ProjectStructure,
 ) -> Result<String, String> {
+    #[cfg(any(test, debug_assertions))]
+    dbg!(&args);
     let clean_args = clean_parser(args, configs);
+    #[cfg(any(test, debug_assertions))]
+    dbg!(&clean_args);
+
     execute(&clean_args, configs, project_structure)
 }
 

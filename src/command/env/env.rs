@@ -2,6 +2,8 @@ use crate::cmd_parser::parser::ParsedCommand;
 use crate::config::Configs;
 use crate::state::ProjectStructure;
 use crate::utils::trim_quotes;
+
+#[derive(Debug, Clone)]
 struct EnvArgs {
     pub help_flag: bool,
     pub cmd: String,
@@ -74,6 +76,9 @@ fn execute(
         );
         return Ok("help displayed".to_string());
     }
+
+    #[cfg(any(test, debug_assertions))]
+    dbg!(&env_args);
 
     Err(format!(
         "Implement the env functionality for command: {} with vars: {:?}, file_path: {:?}, clear_args: {}",

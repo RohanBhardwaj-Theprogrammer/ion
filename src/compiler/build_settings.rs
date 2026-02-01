@@ -1,7 +1,6 @@
 use crate::compiler::trailt::{FromBuildConfigs, ToCompilerArgs};
 use std::collections::HashSet;
 
-
 // --- Preprocessor Configuration ---
 #[derive(Debug, Clone)]
 pub struct Macros {
@@ -51,7 +50,6 @@ impl Macros {
     pub fn remove_undefine(&mut self, macro_name: &str) {
         self.undef.remove(macro_name);
     }
-
 }
 impl FromBuildConfigs<PreprocessorConfigConfig> for Macros {
     fn from_build_config(&mut self, mut macro_config: PreprocessorConfigConfig) {
@@ -71,9 +69,7 @@ impl FromBuildConfigs<PreprocessorConfigConfig> for Macros {
 #[derive(Debug, Clone)]
 pub struct PreprocessorConfig {
     pub macros: Macros,
-
 }
-
 
 impl Default for PreprocessorConfig {
     fn default() -> Self {
@@ -96,13 +92,13 @@ impl FromBuildConfigs<PreprocessorConfigConfig> for PreprocessorConfig {
 }
 
 // --- Language Configuration ---
-#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 // will be checked from the lang option in the configs
 pub enum LangX {
     C(i16),   // version
     Cpp(i16), // version
-    Asm, // not in support yet, but a future consideration
-    AsmCpp, // not in support yet, but a future consideration
+    Asm,      // not in support yet, but a future consideration
+    AsmCpp,   // not in support yet, but a future consideration
 }
 
 impl ToCompilerArgs for LangX {
@@ -117,14 +113,13 @@ impl ToCompilerArgs for LangX {
     }
 }
 
-
 impl Default for LangX {
     fn default() -> Self {
         LangX::Cpp(17) // Default to C++17
     }
 }
 
-#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LangException {
     NoExceptions,
@@ -137,9 +132,6 @@ impl Default for LangException {
         LangException::Default
     }
 }
-
-
-
 
 impl ToCompilerArgs for LangException {
     fn to_args(&self) -> Vec<String> {
@@ -171,10 +163,10 @@ impl Default for LanguageConfig {
 }
 
 impl FromBuildConfigs<LanguageConfigConfig> for LanguageConfig {
-    fn from_build_config(&mut self, congigs_data :LanguageConfigConfig)  {
-            if let Some(standard) = congigs_data.langx {
-                self.standard = standard;
-            }
+    fn from_build_config(&mut self, congigs_data: LanguageConfigConfig) {
+        if let Some(standard) = congigs_data.langx {
+            self.standard = standard;
+        }
         if let Some(exc) = congigs_data.exception {
             self.exception = exc;
         }
@@ -184,7 +176,6 @@ impl FromBuildConfigs<LanguageConfigConfig> for LanguageConfig {
         if let Some(lax_vec) = congigs_data.lax_vector_conversions {
             self.lax_vector_conversions = lax_vec;
         }
-        
     }
 }
 
@@ -203,7 +194,7 @@ impl ToCompilerArgs for LanguageConfig {
 }
 
 // --- Control Configuration ---
-#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DependencyInfoBuild {
     None,
@@ -231,7 +222,7 @@ impl ToCompilerArgs for DependencyInfoBuild {
     }
 }
 
-#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CompilationMode {
     Default,     // Full compilation to executable
@@ -355,7 +346,7 @@ impl ToCompilerArgs for ControlConfig {
 }
 
 // --- Optimization Configuration ---
-#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OptLevel {
     Default, // Let compiler decide
@@ -389,7 +380,7 @@ impl ToCompilerArgs for OptLevel {
     }
 }
 
-#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Lto {
     None,
@@ -600,7 +591,7 @@ impl ToCompilerArgs for OptimizationConfig {
 }
 
 // --- Diagnostic Configuration ---
-#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DebugLevel {
     None,
@@ -882,7 +873,7 @@ impl ToCompilerArgs for DiagnosticConfig {
 // --- Linker Configuration ---
 
 /// Link mode: static, shared, or default (let compiler decide)
-#[derive(Debug, Clone,serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum LinkMode {
     Default, // Let compiler decide
     Static,  // -static (fully static linking)
@@ -1159,8 +1150,8 @@ impl Default for BuildSettings {
 
 impl BuildSettings {
     /// Release build: O3, LTO, strip symbols, strict warnings
-    
-    // FIXME: 
+
+    // FIXME:
     pub fn set_langx(&mut self, langx: LangX) {
         self.language.standard = langx;
     }
@@ -1291,28 +1282,22 @@ impl ToCompilerArgs for BuildSettings {
 
 pub fn build_profile_as_per(profile_name: &Option<String>) -> BuildSettings {
     match profile_name {
-        Some(profile) => {
-            match profile.to_lowercase().as_str() {
-                profile  if profile.starts_with("release") => {
-                    BuildSettings::release()
-                }
-                profile if profile.starts_with("debug") => BuildSettings::debug(),
-                profile if profile.starts_with("fast") => BuildSettings::fast(),
-                profile if profile.starts_with("object") => BuildSettings::object(),
-                _ => BuildSettings::default(),
-            }
-        }
+        Some(profile) => match profile.to_lowercase().as_str() {
+            profile if profile.starts_with("release") => BuildSettings::release(),
+            profile if profile.starts_with("debug") => BuildSettings::debug(),
+            profile if profile.starts_with("fast") => BuildSettings::fast(),
+            profile if profile.starts_with("object") => BuildSettings::object(),
+            _ => BuildSettings::default(),
+        },
         None => BuildSettings::default(),
     }
 }
-
 
 //-----------------------TOML COFIGURABLE STRUCTS-----------------------//
 // USER CONFIGURABLE BUILD PROFILE STRUCTS FOR SERDE
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BuildProfileConfig {
@@ -1336,7 +1321,6 @@ impl BuildProfileConfigs {
     }
 }
 
-
 // SUB CONFIGS
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1345,16 +1329,13 @@ pub struct PreprocessorConfigConfig {
     pub undefines: Option<Vec<String>>,
 }
 
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct LanguageConfigConfig {
-    pub langx   : Option<LangX>,
+    pub langx: Option<LangX>,
     pub exception: Option<LangException>,
     pub strict_checking: Option<bool>,
     pub lax_vector_conversions: Option<bool>,
 }
-
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MachineTargetConfig {
@@ -1380,9 +1361,6 @@ pub struct OptimizationConfigConfig {
     pub target: Option<MachineTargetConfig>,
 }
 
-
-
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DiagnosticConfigConfig {
     pub debug_level: Option<DebugLevel>,
@@ -1397,8 +1375,6 @@ pub struct DiagnosticConfigConfig {
     pub sanitizer_undefined: Option<bool>,
     pub sanitizer_leak: Option<bool>,
 }
-
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LinkerConfigConfig {
