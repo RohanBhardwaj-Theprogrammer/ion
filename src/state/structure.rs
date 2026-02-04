@@ -753,6 +753,56 @@ impl ProjectStructure {
         }
     }
 
+    /// Remove a directory and all its contents from both the in-memory structure and the filesystem (recursive).
+    ///
+    /// `path` may be absolute or root-relative.
+    ///
+    /// Warning: this uses `fs::remove_dir_all` (recursive deletion).
+    pub fn remove_dir_all(&mut self, path: &Path) -> Result<(), String> {
+        let root_relative_path = self.resolve_under_root(path)?;
+
+        let path_components: Vec<&str> = root_relative_path
+            .iter()
+            .filter_map(|os_str| os_str.to_str())
+            .collect();
+
+        if path_components.is_empty() {
+            return Err("Cannot remove root directory".to_string());
+        }
+
+        let dir_name = path_components.last().unwrap();
+
+        if path_components.len() == 1 {
+            // Directory directly under root
+            if self.dirs.remove(*dir_name).is_some() {
+                fs::remove_dir_all(self.canonicalize_path(path)?).map_err(|e| e.to_string())?; // remove from disk
+                return Ok(());
+            } else {
+                return Err("Directory not found".to_string());
+            }
+        }
+
+        // Navigate to the parent DirNode
+        let first_dir = path_components[0];
+        let dir_node = self.dirs.get_mut(first_dir).ok_or("Directory not found")?;
+
+        let mut current_dir = dir_node;
+        for component in &path_components[1..path_components.len() - 1] {
+            current_dir = current_dir
+                .subdirs
+                .get_mut(*component)
+                .ok_or("Directory not found in path")?;
+        }
+
+        // Remove the directory
+        if current_dir.subdirs.remove(*dir_name).is_some() {
+            fs::remove_dir_all(self.canonicalize_path(path)?).map_err(|e| e.to_string())?; // remove from disk
+            Ok(())
+        } else {
+            Err("Directory not found".to_string())
+        }
+    }
+
     // not used currently
     #[allow(dead_code)]
     fn truncate(&mut self) -> Result<PathBuf, String> {

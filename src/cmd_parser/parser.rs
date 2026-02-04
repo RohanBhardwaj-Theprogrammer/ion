@@ -22,7 +22,10 @@ pub fn parse_args(mut args: Vec<String>) -> ParsedCommand {
         "help" => Type::Help,
         cmd if cmd.starts_with('/') => Type::Previous,
         "-v" | "--version" | "version" => Type::Version,
-        _ => Type::Help,
+        _ => {
+            eprintln!("Unknown command: {}. Defaulting to help.", command_str);
+            Type::Help
+        },
     };
 
     if !args.is_empty() {

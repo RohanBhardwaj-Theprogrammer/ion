@@ -31,9 +31,10 @@ pub fn clean_parser(args: &ParsedCommand, configs: &Configs) -> CleanArgs {
     let mut iter = args.args.iter().peekable();
 
     while let Some(arg) = iter.next() {
-        let arg = arg.trim().to_lowercase();
+        let arg_trimmed = arg.trim();
+        let arg_lower = arg_trimmed.to_lowercase();
 
-        match arg.as_str() {
+        match arg_lower.as_str() {
             "-h" | "--help" => {
                 clean_args.help = true;
             }
@@ -44,13 +45,12 @@ pub fn clean_parser(args: &ParsedCommand, configs: &Configs) -> CleanArgs {
                 clean_args.force = true;
             }
             _ => {
-                // if arg.starts_with("-e") {
-                //     let exception = arg.trim_start_matches("-e").trim().to_string();
-                //     let exception = trim_quotes(&exception);
-                //     clean_args.exceptions.push(exception);
-                // } else
-                if arg.starts_with('.') {
-                    clean_args.ext.push(arg);
+                if arg_trimmed.starts_with("-e") {
+                    let exception = arg_trimmed.trim_start_matches("-e").trim().to_string();
+                    let exception = trim_quotes(&exception);
+                    clean_args.exceptions.push(exception);
+                } else if arg_trimmed.starts_with('.') {
+                    clean_args.ext.push(arg_trimmed.to_string());
                 }
                 // Ignore unknown arguments for now
             }
@@ -70,29 +70,25 @@ fn execute(
         return Ok("Displayed help information.".to_string());
     }
 
-    if clean_args.force && clean_args.all {
+    if clean_args.all && clean_args.force {
         for ext in &clean_args.ext {
             let ext_files = project_structure.get_files_with_extension(ext);
-
             let file_paths: Vec<PathBuf> = ext_files.iter().map(|f| f.get_path().clone()).collect();
             for file_path in file_paths {
                 let file_path_str = file_path.to_string_lossy().to_string();
-                if clean_args.exceptions.contains(&file_path_str) && !clean_args.force {
+                if clean_args.exceptions.contains(&file_path_str) {
                     continue;
                 }
                 if let Err(e) = project_structure.remove_file(&file_path) {
-                    return Err(format!(
-                        "Failed to remove file {}: {}",
-                        file_path.display(),
-                        e
-                    ));
+                    eprintln!("Failed to remove file {}: {}", file_path.display(), e);
                 }
             }
         }
-    } else if clean_args.force == false {
+    } else if clean_args.all {
         eprintln!("Use --force to delete files with specific extension. No files were deleted.");
     }
-    project_structure.remove_dir(Path::new("bin"))?;
+    // Always try to remove bin directory, but ignore error if it doesn't exist
+    let _ = project_structure.remove_dir_all(Path::new("build"));
     Ok("Clean operation completed.".to_string())
 }
 
@@ -131,7 +127,7 @@ pub fn clean(
 
 //_________________________________TEST___________________________
 
-#[cfg(test_)]
+#[cfg(test)]
 mod tests {
 
     use super::*;
@@ -149,9 +145,7 @@ mod tests {
             ],
         };
 
-        let mut configs = Configs::test_config(None);
-        configs.allowed_file_extensions =
-            vec![".o".to_string(), ".tmp".to_string(), ".log".to_string()];
+        let configs = Configs::test_config(None);
 
         let clean_args = clean_parser(&parsed_cmd, &configs);
 
