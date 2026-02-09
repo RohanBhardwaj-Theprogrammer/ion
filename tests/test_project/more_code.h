@@ -1,2 +1,0 @@
-
-void null_function() {} ; 

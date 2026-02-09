@@ -12,7 +12,7 @@ struct EnvArgs {
     pub clear_args: bool,
 }
 
-fn env_parser(args: &ParsedCommand, configs: &Configs) -> EnvArgs {
+fn env_parser(args: &ParsedCommand, _configs: &Configs) -> EnvArgs {
     if args.command_type != crate::cmd_parser::cmd::Type::Env {
         panic!("Invalid command type for env_parser");
     }
@@ -100,7 +100,7 @@ pub fn env(
 
 //_________________________TEST__________________________________
 
-#[cfg(test_)]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::cmd_parser::cmd::Type;
@@ -120,7 +120,7 @@ mod tests {
                 "--clear".to_string(),
             ],
         };
-        let configs = Configs::default("./some/path");
+        let configs = Configs::default(std::path::PathBuf::from("./some/path"));
         let env_args = env_parser(&args, &configs);
 
         assert!(env_args.help_flag == false);

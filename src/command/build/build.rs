@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use crate::cmd_parser::{cmd::Type, parser::ParsedCommand};
-use crate::command::run::run_parser::parse_file_name;
+use crate::command::run::run::parse_file_name;
 use crate::compiler::trailt::FromBuildConfigs;
-use crate::compiler::{Compiler, LangX};
+use crate::compiler::Compiler;
 use crate::config::Configs;
 
 #[derive(Clone, Debug)]
@@ -212,24 +212,32 @@ mod test {
     use super::*;
     use crate::cmd_parser::parser::parse_args;
     use crate::config::Configs;
+    use assert_fs::prelude::*;
+    use assert_fs::TempDir;
 
     #[test]
     fn parser_test() {
+        let temp = TempDir::new().unwrap();
+        let root_path = temp.path().to_path_buf();
+
+        // Create a minimal file so parse_file_name can resolve root-relative paths.
+        temp.child("main.cpp")
+            .write_str("int main(){return 0;}")
+            .unwrap();
+
         let build_args_cli = "program build -std 17 -opt 2 -I ./include --release main.cpp";
         let args_vec: Vec<String> = build_args_cli.split(' ').map(|s| s.to_string()).collect();
         let parsed_command = parse_args(args_vec);
-        let root_path = std::path::PathBuf::from("./tests/test_project");
+
         let configs = Configs::default(root_path.clone());
         let mut project_structure = crate::state::structure::ProjectStructure::new(&configs);
         let build_args = build_parser(&parsed_command, &configs, &mut project_structure);
-        let main_cpp_path = root_path.join("main.cpp");
-        let canonicalized = std::fs::canonicalize(&main_cpp_path).unwrap();
-        let expected = canonicalized.to_string_lossy();
-        let actual = build_args.file_name.clone();
-        // Normalize separators for comparison across platforms
+
+        let expected = std::fs::canonicalize(root_path.join("main.cpp")).unwrap();
+        let actual = std::fs::canonicalize(&build_args.file_name).unwrap_or(build_args.file_name);
         assert_eq!(
             crate::utils::canonicalize_path_separators(&actual.to_string_lossy()),
-            crate::utils::canonicalize_path_separators(&expected)
+            crate::utils::canonicalize_path_separators(&expected.to_string_lossy())
         );
         assert_eq!(build_args.std, Some(17));
         assert_eq!(build_args.opt_level, Some(2));
@@ -238,46 +246,76 @@ mod test {
     }
 
     #[test]
-    fn parser_execute_test() {
-        let build_args_cli = "program build -std 17 -opt 2 -I ./include --release main.cpp";
+    fn parser_test_supports_dash_i_prefix_form() {
+        let temp = TempDir::new().unwrap();
+        let root_path = temp.path().to_path_buf();
+
+        temp.child("main.cpp")
+            .write_str("int main(){return 0;}")
+            .unwrap();
+
+        let build_args_cli = "program build -I./inc --fast main.cpp";
         let args_vec: Vec<String> = build_args_cli.split(' ').map(|s| s.to_string()).collect();
         let parsed_command = parse_args(args_vec);
-        let root_path = std::path::PathBuf::from("./tests/test_project");
+
+        let configs = Configs::default(root_path);
+        let mut project_structure = crate::state::structure::ProjectStructure::new(&configs);
+        let build_args = build_parser(&parsed_command, &configs, &mut project_structure);
+
+        assert_eq!(build_args.i_extra, vec!["./inc".to_string()]);
+        assert_eq!(build_args.build_profile, Some("fast".to_string()));
+    }
+
+    #[test]
+    fn parser_execute_test() {
+        let temp = TempDir::new().unwrap();
+        let root_path = temp.path().to_path_buf();
+
         let configs = Configs::default(root_path.clone());
 
-        // Skip if a C++ compiler isn't available on PATH.
-        if std::process::Command::new("g++")
+        // Integration-style test: actually compiles a tiny program.
+        // Skip when a C++ compiler isn't available.
+        let compiler = configs.compiler_path().unwrap_or_else(|| "g++".to_string());
+        if std::process::Command::new(&compiler)
             .arg("--version")
             .output()
             .is_err()
         {
-            eprintln!("Skipping build execute test: g++ not found on PATH");
+            eprintln!(
+                "Skipping build execute test: {} not found on PATH",
+                compiler
+            );
             return;
         }
 
+        temp.child("main.cpp")
+            .write_str(
+                r#"#include <iostream>
+int main(){ std::cout << "ok"; return 0; }"#,
+            )
+            .unwrap();
+
+        let build_args_cli = "program build --release main.cpp";
+        let args_vec: Vec<String> = build_args_cli.split(' ').map(|s| s.to_string()).collect();
+        let parsed_command = parse_args(args_vec);
+
         let mut project_structure = crate::state::structure::ProjectStructure::new(&configs);
         let build_args = build_parser(&parsed_command, &configs, &mut project_structure);
-        let mut project_structure = crate::state::structure::ProjectStructure::new(&configs);
-        let _ = execute(&build_args, &configs, &mut project_structure);
+        let result = execute(&build_args, &configs, &mut project_structure);
+        assert!(result.is_ok(), "Build should succeed: {:?}", result.err());
+
         let exe_path = root_path.join("build/main.exe");
         assert!(
             exe_path.exists(),
             "Executable should be created at {:?}",
             exe_path
         );
+
+        let metadata =
+            std::fs::metadata(&exe_path).expect("executable metadata should be readable");
+        assert!(metadata.len() > 0, "Executable should be non-empty");
     }
 
     #[test]
-    fn run_exe_test() {
-        // Skip if the executable doesn't exist (e.g., compiler not available).
-        let exe_path = "./tests/test_project/build/main.exe";
-        if !std::path::Path::new(exe_path).exists() {
-            eprintln!("Skipping run_exe_test: {} does not exist", exe_path);
-            return;
-        }
-        std::process::Command::new(exe_path)
-            .stdin(std::process::Stdio::inherit())
-            .output()
-            .expect("Failed to execute test executable");
-    }
+    fn parser_____() {}
 }

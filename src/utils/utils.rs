@@ -3,13 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 // REVIEW: need to make it more robout
-pub fn is_cbuild_project(path: &str) -> bool {
+pub fn is_initialized_project(path: &str) -> bool {
     // let project_path = format!("{}/.{}", path, crate::constants::PROGRAM_NAME); skipped  in favor of Path operations
-    let project_path = Path::new(path).join(crate::constants::PROGRAM_NAME);
+    let project_path = Path::new(path).join(format!(".{}", crate::constants::PROGRAM_NAME));
     project_path.exists() && project_path.is_dir()
 }
 
-pub fn truncate(path: &str) -> Result<bool, std::io::Error> {
+pub fn truncate(path: &Path) -> Result<bool, std::io::Error> {
     if !Path::new(path).exists() {
         return Ok(false);
     }
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_truncate_nonexistent_path() {
-        let result = truncate("non_existent_path");
+        let result = truncate(Path::new("non_existent_path"));
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), false);
     }

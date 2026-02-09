@@ -1,21 +1,26 @@
 use crate::command::init::LangType;
-use crate::utils::is_cbuild_project;
+use crate::utils::is_initialized_project;
 use std::fs;
 use std::path::Path;
 
 pub fn generate_dotfile(path: &str, force: bool) -> Result<std::path::PathBuf, String> {
-    let is_project = is_cbuild_project(path);
+    let is_project = is_initialized_project(path);
+    let dotfolder = Path::new(path).join(format!(".{}", crate::constants::PROGRAM_NAME));
 
     if is_project && force {
-        crate::utils::truncate(path).map_err(|e| e.to_string())?;
+        #[cfg(any(test, debug_assertions))]
+        eprintln!(
+            "Warning: Directory {0} is already initialized. Overwriting due to --force flag.\n 
+               [Note] : only the .{0} folder will be overwritten, existing project files and folders will be preserved.",
+            path
+        );
+        crate::utils::truncate(&dotfolder).map_err(|e| e.to_string())?;
     } else if is_project && !force {
         return Err(format!(
             "File {} already exists. Use --force|-f to overwrite.",
             path
         ));
     }
-
-    let dotfolder = Path::new(path).join(format!(".{}", crate::constants::PROGRAM_NAME));
 
     fs::create_dir_all(&dotfolder).map_err(|e| e.to_string())?;
 
@@ -222,7 +227,7 @@ pub mod sketch {
         Ok(())
     }
 
-    pub fn tree_view(structure: &CustomProjectStructure) {
+    fn tree_view(structure: &CustomProjectStructure) {
         struct PrintState<'a> {
             node: &'a CustomProjectStructure,
             prefix: String,
@@ -289,138 +294,151 @@ pub mod sketch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::init::LangType;
-    use std::fs;
-    use std::path::Path;
+    use assert_fs::prelude::*;
+    use assert_fs::TempDir;
 
-    fn write_json(path: &Path, contents: &str) {
-        fs::write(path, contents).expect("failed to write test json");
-    }
+    #[test]
+    fn generate_dotfile_creates_dotfolder_when_missing() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let root_s = root.to_str().expect("temp path should be valid utf-8");
 
-    fn cleanup(path: &str) {
-        let _ = fs::remove_dir_all(path);
+        let dot = generate_dotfile(root_s, false).expect("generate_dotfile should succeed");
+        assert_eq!(
+            dot,
+            root.join(format!(".{}", crate::constants::PROGRAM_NAME))
+        );
+        assert!(dot.exists(), "dot folder should exist");
+        assert!(dot.is_dir(), "dot folder should be a directory");
     }
 
     #[test]
-    fn test_is_cbuild_project_detects_marker() {
-        let test_path = "test_cbuild_project__2333";
+    fn generate_dotfile_errors_if_already_initialized_and_no_force() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let root_s = root.to_str().expect("temp path should be valid utf-8");
 
-        fs::create_dir_all(test_path).unwrap();
-        fs::create_dir_all(format!("{}/.{}", test_path, crate::constants::PROGRAM_NAME)).unwrap();
+        // Create the marker directory to make it look initialized.
+        std::fs::create_dir_all(root.join(format!(".{}", crate::constants::PROGRAM_NAME))).unwrap();
 
-        assert!(is_cbuild_project(test_path));
+        let result = generate_dotfile(root_s, false);
+        assert!(
+            result.is_err(),
+            "should error when already initialized without force"
+        );
     }
 
     #[test]
-    fn test_is_cbuild_project_returns_false_when_missing() {
-        let test_path = "test_cbuild_project_missing";
-        fs::create_dir_all(test_path).unwrap();
+    fn generate_dotfile_force_truncates_dotfolder_only() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let root_s = root.to_str().expect("temp path should be valid utf-8");
 
-        assert!(!is_cbuild_project(test_path));
+        let dot = root.join(format!(".{}", crate::constants::PROGRAM_NAME));
+        std::fs::create_dir_all(&dot).unwrap();
+        std::fs::write(dot.join("old.txt"), "old").unwrap();
+        std::fs::write(root.join("keep.txt"), "keep").unwrap();
+
+        let _ = generate_dotfile(root_s, true).expect("force should succeed");
+
+        assert!(
+            root.join("keep.txt").exists(),
+            "non-dot files should be preserved"
+        );
+        assert!(
+            !dot.join("old.txt").exists(),
+            "dotfolder contents should be truncated"
+        );
+        assert!(dot.exists(), "dotfolder should still exist");
     }
 
     #[test]
-    fn test_generate_dotfile_creates_layout() {
-        let temp_dir = "test_generate_structure";
-        fs::create_dir_all(temp_dir).unwrap();
+    fn std_structure_at_creates_expected_layout_for_c_and_cpp() {
+        let temp = TempDir::new().unwrap();
 
-        generate_dotfile(temp_dir, true).unwrap();
+        let project_c = temp.child("proj_c");
+        sketch::std_structure_at(project_c.path(), &LangType::C, false).expect("C structure");
+        assert!(project_c.path().join("src").is_dir());
+        assert!(project_c.path().join("include").is_dir());
+        assert!(project_c.path().join("build").is_dir());
+        assert!(project_c.path().join("src").join("main.c").is_file());
 
-        let dot_dir = format!("{}/.{}", temp_dir, crate::constants::PROGRAM_NAME);
-        let info_file = format!("{}/.info", dot_dir);
-
-        assert!(Path::new(&dot_dir).exists());
-        assert!(Path::new(&info_file).exists());
+        let project_cpp = temp.child("proj_cpp");
+        sketch::std_structure_at(project_cpp.path(), &LangType::Cpp, false).expect("CPP structure");
+        assert!(project_cpp.path().join("src").join("main.cpp").is_file());
     }
 
     #[test]
-    fn test_generate_dotfile_without_force_errors_if_exists() {
-        let temp_dir = "test_generate_no_force";
-        fs::create_dir_all(temp_dir).unwrap();
-        fs::create_dir_all(format!("{}/.{}", temp_dir, crate::constants::PROGRAM_NAME)).unwrap();
+    fn std_structure_at_errors_without_force_when_structure_exists() {
+        let temp = TempDir::new().unwrap();
+        let project = temp.child("proj_exists");
+        std::fs::create_dir_all(project.path().join("src")).unwrap();
 
-        let result = generate_dotfile(temp_dir, false);
-        assert!(result.is_err());
+        let result = sketch::std_structure_at(project.path(), &LangType::Cpp, false);
+        assert!(
+            result.is_err(),
+            "should error when src/include/build exist and no force"
+        );
     }
 
     #[test]
-    fn test_structure_at_creates_directories() {
-        let temp_dir = "test_structure_at";
-        fs::create_dir_all(temp_dir).unwrap();
-
-        sketch::std_structure_at(Path::new(temp_dir), &LangType::C, true).unwrap();
-
-        assert!(Path::new(&format!("{}/src", temp_dir)).exists());
-        assert!(Path::new(&format!("{}/include", temp_dir)).exists());
-        assert!(Path::new(&format!("{}/build", temp_dir)).exists());
-    }
-
-    #[test]
-    fn test_structure_at_errors_without_force_when_exists() {
-        let temp_dir = "test_structure_no_force";
-        fs::create_dir_all(format!("{}/src", temp_dir)).unwrap();
-
-        let result = sketch::std_structure_at(Path::new(temp_dir), &LangType::Cpp, false);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_dotfile_wrapper_calls_generate() {
-        let temp_dir = "test_sketch_dotfile";
-        fs::create_dir_all(temp_dir).unwrap();
-
-        super::generate_dotfile(temp_dir, true).unwrap();
-
-        let dot_dir = format!("{}/.{}", temp_dir, crate::constants::PROGRAM_NAME);
-        assert!(Path::new(&dot_dir).exists());
-    }
-
-    #[test]
-    fn test_generate_custom_structure_files_only() {
-        let tmp = "test_custom_structure_files_only";
-        cleanup(tmp);
-
-        let json_path = Path::new(tmp).with_extension("json");
-        let json = r#"{
-            "name": "proj",
-            "files": ["a.txt", "b.txt"]
-        }"#;
-        write_json(&json_path, json);
-
-        sketch::generate_custom_structure(&json_path, Path::new(tmp), true).unwrap();
-
-        assert!(Path::new(tmp).join("proj").join("a.txt").exists());
-        assert!(Path::new(tmp).join("proj").join("b.txt").exists());
-
-        cleanup(tmp);
-        let _ = fs::remove_file(json_path);
-    }
-
-    #[test]
-    fn test_generate_custom_structure_nested_folders() {
-        let tmp = "test_custom_structure_nested";
-        cleanup(tmp);
-
-        let json_path = Path::new(tmp).with_extension("json");
-        let json = r#"{
-            "name": "proj",
+    fn generate_custom_structure_creates_nested_files_and_folders() {
+        let temp = TempDir::new().unwrap();
+        let json = temp.child("format.json");
+        json.write_str(
+            r#"{
+    "name": "my_project",
+    "folders": [
+    {
+            "name": "src",
             "folders": [
-                {
-                    "name": "nested",
-                    "files": ["x.c"],
-                    "folders": [{"name": "inner", "files": ["y.c"]}]
-                }
-            ]
-        }"#;
-        write_json(&json_path, json);
+        {
+                    "name": "modules",
+                    "files": ["mod1.c", "mod2.c"]
+        }
+      ],
+            "files": ["main.c", "utils.c"]
+    },
+    {
+            "name": "include",
+            "files": ["main.h", "utils.h"]
+    }
+  ],
+    "files": ["README.md", "LICENSE"]
+}"#,
+        )
+        .unwrap();
 
-        sketch::generate_custom_structure(&json_path, Path::new(tmp), true).unwrap();
+        let target = temp.child("target");
+        assert!(!target.path().exists());
 
-        assert!(Path::new(tmp).join("proj/nested").exists());
-        assert!(Path::new(tmp).join("proj/nested/x.c").exists());
-        assert!(Path::new(tmp).join("proj/nested/inner/y.c").exists());
+        sketch::generate_custom_structure(json.path(), target.path(), false)
+            .expect("should generate custom structure");
 
-        cleanup(tmp);
-        let _ = fs::remove_file(json_path);
+        let base = target.path().join("my_project");
+        assert!(base.is_dir());
+        assert!(base.join("README.md").is_file());
+        assert!(base.join("LICENSE").is_file());
+        assert!(base.join("src").join("main.c").is_file());
+        assert!(base.join("src").join("utils.c").is_file());
+        assert!(base.join("src").join("modules").join("mod1.c").is_file());
+        assert!(base.join("src").join("modules").join("mod2.c").is_file());
+        assert!(base.join("include").join("main.h").is_file());
+        assert!(base.join("include").join("utils.h").is_file());
+    }
+
+    #[test]
+    fn generate_project_structure_uses_custom_when_path_provided() {
+        let temp = TempDir::new().unwrap();
+        let json = temp.child("format.json");
+        json.write_str(r#"{"name":"p","files":["a.txt"]}"#).unwrap();
+
+        let target = temp.child("wrapper_target");
+        assert!(!target.path().exists());
+
+        generate_project_structure(target.path(), Some(json.path()), &LangType::Cpp, false)
+            .expect("wrapper should generate custom structure");
+
+        assert!(target.path().join("p").join("a.txt").is_file());
     }
 }

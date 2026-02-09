@@ -1,4 +1,4 @@
-pub mod build_parser;
+pub mod build;
 mod help;
 
-pub use build_parser::build;
+pub use build::build;

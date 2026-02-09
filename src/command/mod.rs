@@ -7,4 +7,6 @@ pub mod run;
 
 pub mod execute;
 
+pub mod ion_help;
+
 pub use execute::execute;

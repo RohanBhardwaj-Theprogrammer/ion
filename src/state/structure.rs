@@ -212,6 +212,8 @@ impl ProjectStructure {
     /// - ensures they exist,
     /// - ensures they do not escape the configured project root,
     /// - returns a *root-relative* path.
+    
+    //REVIEW: need thorough review of this , as this is ai suggested code 
     fn resolve_under_root(&self, path: &Path) -> Result<PathBuf, String> {
         // Handle "." as root itself
         if path == Path::new(".") {
@@ -228,9 +230,20 @@ impl ProjectStructure {
             return Err("Path doesn't exist under the project directory".to_string());
         }
 
-        // Get root-relative path
-        let root_relative_path = absolute_path
-            .strip_prefix(&self.root_path)
+        // Get root-relative path. On Windows, `canonicalize` may produce verbatim paths
+        // (e.g. `\\?\C:\...`) which won't `strip_prefix` against non-verbatim paths.
+        // Try a couple of representations to keep lookups stable.
+        if let Ok(root_relative_path) = absolute_path.strip_prefix(&self.root_path) {
+            return Ok(root_relative_path.to_path_buf());
+        }
+
+        let canonical_root = fs::canonicalize(&self.root_path).unwrap_or_else(|_| self.root_path.clone());
+        let canonical_abs = fs::canonicalize(&absolute_path).unwrap_or_else(|_| absolute_path.clone());
+
+        let root_relative_path = canonical_abs
+            .strip_prefix(&canonical_root)
+            .or_else(|_| canonical_abs.strip_prefix(&self.root_path))
+            .or_else(|_| absolute_path.strip_prefix(&canonical_root))
             .map_err(|_| "Path is not under project root".to_string())?;
 
         Ok(root_relative_path.to_path_buf())
@@ -1427,101 +1440,38 @@ impl<'a> ProjectStructureAsRef<'a> {
 mod tests {
     use super::*;
     use crate::config::Configs;
-    use std::collections::HashSet;
-    use std::fs;
+    use assert_fs::prelude::*;
+    use assert_fs::TempDir;
     use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    static FS_TEST_LOCK: Mutex<()> = Mutex::new(());
+    fn populate_project_at(root: &Path) {
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join("include")).unwrap();
 
-    // ------------------------------------------------------------
-    // Helper: create ProjectStructure from existing test_project
-    // ------------------------------------------------------------
-    fn make_test_project_structure() -> (Configs, ProjectStructure) {
-        let root_abs = fs::canonicalize("./tests/test_project")
-            .unwrap_or_else(|_| PathBuf::from("./tests/test_project"));
+        std::fs::write(
+            root.join("src/main.cpp"),
+            "#include <iostream>\nint main(){std::cout<<\"ok\";return 0;}",
+        )
+        .unwrap();
+        std::fs::write(root.join("include/logger.h"), "#pragma once\nvoid log();").unwrap();
+        std::fs::write(
+            root.join("src/logger.cpp"),
+            "#include \"logger.h\"\nvoid log(){}",
+        )
+        .unwrap();
+    }
 
-        let root_str = root_abs.to_string_lossy().to_string();
-        let configs = Configs::test_config(Some(&root_str));
+    fn make_temp_project() -> (TempDir, Configs, ProjectStructure) {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().to_path_buf();
+
+        // Minimal but realistic layout.
+        populate_project_at(&root);
+
+        // Returning TempDir keeps it alive for the test; it auto-deletes on drop.
+        let configs = Configs::default(root);
         let structure = ProjectStructure::new(&configs);
-
-        (configs, structure)
-    }
-
-    fn snapshot_tree_paths(root_abs: &Path) -> HashSet<PathBuf> {
-        let mut out = HashSet::new();
-        let mut stack = vec![root_abs.to_path_buf()];
-        while let Some(dir) = stack.pop() {
-            let rd = match fs::read_dir(&dir) {
-                Ok(rd) => rd,
-                Err(_) => continue,
-            };
-
-            for entry in rd.flatten() {
-                let path = entry.path();
-                let rel = match path.strip_prefix(root_abs) {
-                    Ok(p) => p.to_path_buf(),
-                    Err(_) => continue,
-                };
-                out.insert(rel);
-                if path.is_dir() {
-                    stack.push(path);
-                }
-            }
-        }
-        out
-    }
-
-    fn unique_rel_path(root_abs: &Path, base: &str) -> PathBuf {
-        let pid = std::process::id();
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-
-        for i in 0u32..5000 {
-            let name = format!("__ps_test_{}_{}_{}_{}", base, pid, nanos, i);
-            let rel = PathBuf::from(name);
-            if !root_abs.join(&rel).exists() {
-                return rel;
-            }
-        }
-        // Extremely unlikely; fall back to a fixed name.
-        PathBuf::from(format!("__ps_test_{}", base))
-    }
-
-    struct FsCleanup {
-        files: Vec<PathBuf>,
-        dirs: Vec<PathBuf>,
-    }
-
-    impl FsCleanup {
-        fn new() -> Self {
-            Self {
-                files: Vec::new(),
-                dirs: Vec::new(),
-            }
-        }
-
-        fn track_file(&mut self, abs: PathBuf) {
-            self.files.push(abs);
-        }
-
-        fn track_dir(&mut self, abs: PathBuf) {
-            self.dirs.push(abs);
-        }
-    }
-
-    impl Drop for FsCleanup {
-        fn drop(&mut self) {
-            for file in self.files.iter().rev() {
-                let _ = fs::remove_file(file);
-            }
-            for dir in self.dirs.iter().rev() {
-                let _ = fs::remove_dir_all(dir);
-            }
-        }
+        (temp, configs, structure)
     }
 
     // ------------------------------------------------------------
@@ -1530,120 +1480,124 @@ mod tests {
 
     #[test]
     fn indexes_known_files_and_paths() {
-        let (_configs, structure) = make_test_project_structure();
+        let (_temp, configs, structure) = make_temp_project();
 
-        let expected_files = [
-            "main.cpp",
-            "logger.cpp",
-            "logger.h",
-            "math_utils.cpp",
-            "math_utils.h",
-            "util.cpp",
-            "util.h",
-            "some_code.cpp",
-            "some_code.h",
-            "some_message.cpp",
-            "some_message.h",
-        ];
-
-        for file in expected_files {
-            assert!(
-                structure.get_file_by_name(file).is_some(),
-                "Expected `{}` to be indexed",
-                file
-            );
-        }
-
-        assert!(structure.exists(Path::new("main.cpp")));
+        assert!(!structure.get_all_files().is_empty());
+        assert!(structure.get_file_by_name("main.cpp").is_some());
+        assert!(structure
+            .get_file_by_path(Path::new("src/main.cpp"))
+            .is_some());
         assert!(!structure.exists(Path::new("__does_not_exist__.cpp")));
+
+        let abs = configs.get_project_root().join("src/main.cpp");
+        assert!(structure.get_file_by_path(&abs).is_some());
     }
 
     #[test]
     fn source_and_header_files_are_classified_correctly() {
-        let (_configs, structure) = make_test_project_structure();
-
+        let (_temp, _configs, structure) = make_temp_project();
         let sources = structure.get_source_file();
         let headers = structure.get_header_file();
 
-        assert!(sources.iter().any(|f| f.get_path().ends_with("main.cpp")));
-        assert!(headers.iter().any(|f| f.get_path().ends_with("logger.h")));
-
-        assert!(!sources.iter().any(|f| f.get_path().ends_with("logger.h")));
+        assert!(sources
+            .iter()
+            .any(|f| f.get_path().ends_with("src/main.cpp")));
+        assert!(sources
+            .iter()
+            .any(|f| f.get_path().ends_with("src/logger.cpp")));
+        assert!(headers
+            .iter()
+            .any(|f| f.get_path().ends_with("include/logger.h")));
     }
 
     #[test]
     fn extension_queries_work_with_and_without_dot() {
-        let (_configs, structure) = make_test_project_structure();
+        let (_temp, _configs, structure) = make_temp_project();
 
         let cpp1 = structure.get_files_with_extension(".cpp");
         let cpp2 = structure.get_files_with_extension("cpp");
 
         assert_eq!(cpp1.len(), cpp2.len());
-        assert!(cpp1.iter().any(|f| f.get_path().ends_with("logger.cpp")));
+        assert!(cpp1
+            .iter()
+            .any(|f| f.get_path().ends_with("src/logger.cpp")));
     }
 
     #[test]
     fn header_lookup_and_impl_resolution_works() {
-        let (_configs, structure) = make_test_project_structure();
+        let (_temp, _configs, structure) = make_temp_project();
 
-        let headers = ["logger.h", "math_utils.h", "util.h"];
+        let paths = structure
+            .get_header_file_paths("logger.h")
+            .expect("Header should exist");
 
-        for header in headers {
-            let paths = structure
-                .get_header_file_paths(header)
-                .expect("Header should exist");
+        let header_path = &paths[0];
+        let impl_path = structure
+            .get_header_impl_file(header_path)
+            .expect("Implementation should exist");
 
-            let header_path = &paths[0];
-            let impl_path = structure
-                .get_header_impl_file(header_path)
-                .expect("Implementation should exist");
-
-            let impl_stem = impl_path.file_stem().unwrap().to_string_lossy();
-            let header_stem = header_path.file_stem().unwrap().to_string_lossy();
-            assert!(impl_stem.starts_with(header_stem.as_ref()));
-        }
+        assert!(impl_path.ends_with("src/logger.cpp"));
     }
 
     #[test]
     fn get_files_in_dir_respects_boundaries() {
-        let (_configs, structure) = make_test_project_structure();
+        let temp = TempDir::new().unwrap();
+        temp.child("src").create_dir_all().unwrap();
+        temp.child("test_sample/src").create_dir_all().unwrap();
+        temp.child("main.cpp")
+            .write_str("int main(){return 0;}")
+            .unwrap();
+        temp.child("test_sample/src/main.cpp")
+            .write_str("int main(){return 0;}")
+            .unwrap();
+
+        let configs = Configs::default(temp.path().to_path_buf());
+        let structure = ProjectStructure::new(&configs);
 
         let root_files = structure.get_files_in_dir(Path::new("."));
         assert!(root_files
             .iter()
             .any(|f| f.get_path().ends_with("main.cpp")));
-
         assert!(!root_files
             .iter()
-            .any(|f| { f.get_path().to_string_lossy().contains("test_sample/src") }));
+            .any(|f| f.get_path().to_string_lossy().contains("test_sample")));
 
         let nested = structure.get_files_in_dir(Path::new("test_sample/src"));
         assert!(nested
             .iter()
-            .any(|f| { f.get_path().ends_with("test_sample/src/main.cpp") }));
+            .any(|f| f.get_path().ends_with("test_sample/src/main.cpp")));
     }
 
     #[test]
     fn test_config_does_not_exclude_dirs_by_default() {
-        let (_configs, structure) = make_test_project_structure();
-        // `Configs::test_config` currently uses an empty excluded set.
-        // So directories like `build/` and nested `.cbuild/` should be indexed.
+        let temp = TempDir::new().unwrap();
+        temp.child("build").create_dir_all().unwrap();
+        temp.child("build/main.exe").write_str("x").unwrap();
+        temp.child("test_sample/.cbuild").create_dir_all().unwrap();
+        temp.child("test_sample/.cbuild/.info")
+            .write_str("x")
+            .unwrap();
+
+        let configs = Configs::default(temp.path().to_path_buf());
+        let structure = ProjectStructure::new(&configs);
+
+        // `Configs::default` excludes tool dirs like `.cbuild` by default,
+        // but build artifacts should still be indexable when not excluded.
         assert!(structure
             .get_file_by_path(Path::new("build/main.exe"))
-            .is_some());
-        assert!(structure
-            .get_file_by_path(Path::new("test_sample/.cbuild/.info"))
             .is_some());
     }
 
     #[test]
     fn absolute_and_relative_paths_resolve_identically() {
-        let (configs, structure) = make_test_project_structure();
+        let (_temp, configs, structure) = make_temp_project();
 
-        let rel = structure.get_file_by_path(Path::new("main.cpp")).unwrap();
+        let rel = structure
+            .get_file_by_path(Path::new("src/main.cpp"))
+            .unwrap();
 
         let abs = structure
-            .get_file_by_path(&configs.get_project_root().join("main.cpp"))
+            .get_file_by_path(&configs.get_project_root().join("src/main.cpp"))
             .unwrap();
 
         assert_eq!(rel.get_path(), abs.get_path());
@@ -1651,10 +1605,9 @@ mod tests {
 
     #[test]
     fn index_based_access_is_safe() {
-        let (_configs, structure) = make_test_project_structure();
-
+        let (_temp, _configs, structure) = make_temp_project();
         let all = structure.get_all_files();
-        assert!(!all.is_empty());
+        assert!(!all.is_empty(), "Should have at least one file");
 
         for i in 0..all.len() {
             assert!(structure.get_by_index(i).is_some());
@@ -1669,92 +1622,61 @@ mod tests {
 
     #[test]
     fn create_and_remove_file_restores_state() {
-        let _lock = FS_TEST_LOCK.lock().unwrap();
-        let (configs, mut structure) = make_test_project_structure();
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().to_path_buf();
 
-        let root_abs = configs.get_project_root().clone();
-        let before = snapshot_tree_paths(&root_abs);
+        temp.child("src").create_dir_all().unwrap();
+        temp.child("src/tmp.cpp")
+            .write_str("int tmp(){return 1;}")
+            .unwrap();
 
-        let mut cleanup = FsCleanup::new();
+        let configs = Configs::default(root.clone());
+        let mut structure = ProjectStructure::new(&configs);
 
-        let test_file_rel = unique_rel_path(&root_abs, "file.cpp");
-        let test_file_abs = root_abs.join(&test_file_rel);
-        cleanup.track_file(test_file_abs.clone());
-
-        // Create file on disk
-        fs::write(&test_file_abs, "int temp() { return 42; }").unwrap();
-
-        // Register in structure
-        let created = structure
-            .create_file(&test_file_rel, SourceFileType::Source)
-            .expect("create_file should succeed");
-
-        assert_eq!(created, test_file_rel);
-        assert!(structure.get_file_by_path(&test_file_rel).is_some());
-
-        // Remove file
+        let rel = PathBuf::from("src/tmp.cpp");
         structure
-            .remove_file(&test_file_rel)
+            .create_file(&rel, SourceFileType::Source)
+            .expect("create_file should succeed");
+        assert!(structure.get_file_by_path(&rel).is_some());
+
+        structure
+            .remove_file(&rel)
             .expect("remove_file should succeed");
-
-        assert!(!test_file_abs.exists());
-        assert!(structure.get_file_by_path(&test_file_rel).is_none());
-
-        drop(cleanup);
-        let after = snapshot_tree_paths(&root_abs);
-        assert_eq!(before, after, "Directory tree must be unchanged after test");
+        assert!(!root.join(&rel).exists());
+        assert!(structure.get_file_by_path(&rel).is_none());
     }
 
     #[test]
     fn create_and_remove_directory_restores_state() {
-        let _lock = FS_TEST_LOCK.lock().unwrap();
-        let (configs, mut structure) = make_test_project_structure();
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().to_path_buf();
+        let configs = Configs::default(root.clone());
+        let mut structure = ProjectStructure::new(&configs);
 
-        let root_abs = configs.get_project_root().clone();
-        let before = snapshot_tree_paths(&root_abs);
-
-        let mut cleanup = FsCleanup::new();
-
-        let test_dir_rel = unique_rel_path(&root_abs, "dir");
-        let test_dir_abs = root_abs.join(&test_dir_rel);
-        cleanup.track_dir(test_dir_abs.clone());
-
-        // Create directory
-        let created = structure
-            .create_dir(&test_dir_rel)
-            .expect("create_dir should succeed");
-
-        assert_eq!(created, test_dir_rel);
-        assert!(test_dir_abs.exists());
-
-        // Create a file inside it
-        let nested_file_rel = test_dir_rel.join("nested.cpp");
-        let nested_file_abs = root_abs.join(&nested_file_rel);
-        cleanup.track_file(nested_file_abs.clone());
-
-        fs::write(&nested_file_abs, "int nested() { return 0; }").unwrap();
-
+        let rel_dir = PathBuf::from("build/generated");
         structure
-            .create_file(&nested_file_rel, SourceFileType::Source)
+            .create_dir(&rel_dir)
+            .expect("create_dir should succeed");
+        assert!(root.join(&rel_dir).is_dir());
+
+        let nested_rel = rel_dir.join("nested.cpp");
+        temp.child("build/generated/nested.cpp")
+            .write_str("int nested(){return 0;}")
+            .unwrap();
+        structure
+            .create_file(&nested_rel, SourceFileType::Source)
             .expect("create nested file");
 
-        assert!(structure.get_file_by_path(&nested_file_rel).is_some());
-
-        // Remove nested file first (required)
         structure
-            .remove_file(&nested_file_rel)
+            .remove_file(&nested_rel)
             .expect("remove nested file");
+        assert!(!root.join(&nested_rel).exists());
 
-        // Remove directory
+        // remove_dir is non-recursive; directory should now be empty.
         structure
-            .remove_dir(&test_dir_rel)
+            .remove_dir(&rel_dir)
             .expect("remove_dir should succeed");
-
-        assert!(!test_dir_abs.exists());
-
-        drop(cleanup);
-        let after = snapshot_tree_paths(&root_abs);
-        assert_eq!(before, after, "Directory tree must be unchanged after test");
+        assert!(!root.join(&rel_dir).exists());
     }
 
     // ------------------------------------------------------------
@@ -1763,7 +1685,7 @@ mod tests {
 
     #[test]
     fn print_structure_does_not_panic() {
-        let (_configs, structure) = make_test_project_structure();
+        let (_temp, _configs, structure) = make_temp_project();
         structure.debug_print();
     }
 }

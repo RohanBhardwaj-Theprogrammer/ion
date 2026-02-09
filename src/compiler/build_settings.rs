@@ -1310,14 +1310,12 @@ pub struct BuildProfileConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct BuildProfileConfigs {
-    pub profiles: HashMap<String, BuildProfileConfig>,
-}
+pub struct BuildProfileConfigs(HashMap<String, BuildProfileConfig>);
 
 //REVIEW: need to review it , need to consider the usage and allowed profiles names as `release`, `debug`, `fast, `object`
 impl BuildProfileConfigs {
     pub fn get(&self, profile_name: &str) -> Option<&BuildProfileConfig> {
-        self.profiles.get(profile_name)
+        self.0.get(profile_name)
     }
 }
 

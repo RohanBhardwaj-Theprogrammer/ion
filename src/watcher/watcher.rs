@@ -29,8 +29,8 @@ pub fn watcher_parser(args: &crate::cmd_parser::parser::ParsedCommand) -> Watche
 
 fn execute(
     watcher_args: &WatcherArgs,
-    configs: &Configs,
-    project_structure: &mut ProjectStructure,
+    _configs: &Configs,
+    _project_structure: &mut ProjectStructure,
 ) -> Result<String, String> {
     todo!(
         " Watcher! : will watch later , not today ! :  \t {}",

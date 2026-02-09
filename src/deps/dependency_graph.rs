@@ -27,6 +27,7 @@ struct FileNode {
     file_type: SourceFileType,
     impl_file: Option<usize>,
     dependencies: Option<Vec<usize>>,
+    #[allow(dead_code)]
     parent: Option<usize>,
 }
 

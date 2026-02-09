@@ -52,37 +52,68 @@ impl ToCompilerArgs for IncludeFiles {
 mod tests {
     use super::*;
     use crate::config::Configs;
+    use assert_fs::prelude::*;
+    use assert_fs::TempDir;
     use std::path::PathBuf;
 
     #[test]
     fn include_files_tests() {
-        let root_path = "./tests/test_project";
-        let main_file = format!("{}/main.cpp", root_path);
-        let main_file_path = PathBuf::from(&main_file);
-        let configs = Configs::default(main_file_path.parent().unwrap().to_path_buf());
+        let temp = TempDir::new().unwrap();
+
+        // Minimal realistic layout.
+        temp.child("src").create_dir_all().unwrap();
+        temp.child("include").create_dir_all().unwrap();
+
+        temp.child("include/logger.h")
+            .write_str("#pragma once\nvoid log();\n")
+            .unwrap();
+        temp.child("include/util.h")
+            .write_str("#pragma once\nint util();\n")
+            .unwrap();
+
+        temp.child("src/logger.cpp")
+            .write_str("#include \"logger.h\"\nvoid log(){}\n")
+            .unwrap();
+        temp.child("src/util.cpp")
+            .write_str("#include \"util.h\"\nint util(){return 1;}\n")
+            .unwrap();
+
+        temp.child("src/main.cpp")
+            .write_str(
+                "#include \"logger.h\"\n#include \"util.h\"\nint main(){log(); return util();}\n",
+            )
+            .unwrap();
+
+        let configs = Configs::default(temp.path().to_path_buf());
+        let main_file = temp.child("src/main.cpp").path().to_string_lossy().to_string();
         let include_files = IncludeFiles::new_from_main(&configs, &main_file);
-        if !include_files.main_file.contains("main.cpp") {
-            println!(
-                "DEBUG: include_files.main_file = {}",
-                include_files.main_file
-            );
-        }
+
         assert!(
             include_files.main_file.contains("main.cpp"),
             "main_file was: {}",
             include_files.main_file
         );
-        assert!(!include_files.header_files.is_empty());
-        let expected_sources = [
-            "main.cpp",
-            "some_code.cpp",
-            "util.cpp",
-            "math_utils.cpp",
-            "logger.cpp",
-        ];
-        for src in &expected_sources {
-            let found = include_files.source_files.iter().any(|f| f.contains(src));
-            assert!(found, "Source file {} should be found", src);
+
+        // `header_files` actually contains include directories (see DependencyGraph::get_main_includes).
+        let include_dir = std::fs::canonicalize(temp.child("include").path()).unwrap();
+        let has_include_dir = include_files
+            .header_files
+            .iter()
+            .any(|p| PathBuf::from(p) == include_dir);
+        assert!(
+            has_include_dir,
+            "include directories should include {:?}; got: {:?}",
+            include_dir,
+            include_files.header_files
+        );
+
+        // Source discovery should include main + implementation files for included headers.
+        for expected in ["main.cpp", "logger.cpp", "util.cpp"] {
+            let found = include_files
+                .source_files
+                .iter()
+                .any(|f| f.contains(expected));
+            assert!(found, "Source file {} should be found", expected);
         }
     }
 }

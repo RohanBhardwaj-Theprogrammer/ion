@@ -4,9 +4,11 @@ use ion::config::Configs;
 use ion::state::ProjectStructure;
 use ion::utils;
 
+//REVIEW: comprehensive testing remaining, and non-.ion configs handling to be made , configs and project structure,
+
 fn main() {
     let mut configs: Configs = match utils::find_cbuild(".") {
-        Some(path) => Configs::Init(path)
+        Some(path) => Configs::init(path)
             .expect("[unexepcted error] : encountered unexpeted error, while parsing the configs "),
         None => {
             eprintln!("[warning] :\t Could not find the .{} file in the current or parent directories. defaulting to cwd.", ion::constants::PROGRAM_NAME);

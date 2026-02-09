@@ -7,4 +7,10 @@ test.exe
 archive
 TODO
 BluePrint.md
-ishell/
+ishell
+.vscode
+tests
+.devcontainer
+test_util
+target
+.dockerignore

@@ -40,6 +40,7 @@ pub fn read_file_headers_quote(file_path: &str) -> Result<Vec<String>, String> {
     return Ok(headers);
 }
 
+#[allow(dead_code)]
 fn read_headers_from(file_path: &str) -> Result<(Vec<String>, Vec<String>), String> {
     if std::path::Path::new(file_path).is_dir() {
         return Err(" Provided path is a directory , expected a file path ".to_string());

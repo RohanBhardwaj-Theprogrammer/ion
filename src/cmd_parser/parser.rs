@@ -23,9 +23,9 @@ pub fn parse_args(mut args: Vec<String>) -> ParsedCommand {
         cmd if cmd.starts_with('/') => Type::Previous,
         "-v" | "--version" | "version" => Type::Version,
         _ => {
-            eprintln!("Unknown command: {}. Defaulting to help.", command_str);
+            eprintln!("[Unknown command]: {}. Defaulting to help.", command_str);
             Type::Help
-        },
+        }
     };
 
     if !args.is_empty() {

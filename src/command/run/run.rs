@@ -39,6 +39,7 @@ pub struct RunArgs {
     pub program_args: Vec<String>,
 }
 
+// REVIEW: need to review the code of the run parser and make it more robust and consistent with the check parser, also need to review the file parsing logic and make it more robust and consistent across the codebase
 pub(crate) fn parse_file_name(
     file_arg: &str,
     configs: &crate::config::Configs,
@@ -47,7 +48,29 @@ pub(crate) fn parse_file_name(
     let trimmed = file_arg.trim();
     match trimmed {
         "" | "." => {
-            // Use configs for default file selection (legacy or user preference)
+            // No explicit file was provided.
+            // Prefer a discovered entry file, then common main filenames, then fall back.
+            if let Some(entry) = project_structure.get_entry_files().first() {
+                return entry.get_path().clone();
+            }
+            if let Some(main_cpp) = project_structure.get_file_by_name("main.cpp") {
+                return main_cpp.get_path().clone();
+            }
+            if let Some(main_c) = project_structure.get_file_by_name("main.c") {
+                return main_c.get_path().clone();
+            }
+
+            let candidate_src_cpp = configs.get_root_path().join("src").join("main.cpp");
+            if candidate_src_cpp.exists() {
+                return std::fs::canonicalize(&candidate_src_cpp).unwrap_or(candidate_src_cpp);
+            }
+
+            let candidate_src_c = configs.get_root_path().join("src").join("main.c");
+            if candidate_src_c.exists() {
+                return std::fs::canonicalize(&candidate_src_c).unwrap_or(candidate_src_c);
+            }
+
+            // Legacy/user preference fallback.
             configs.get_file("")
         }
         idx if is_numeric(idx) => {
@@ -60,18 +83,46 @@ pub(crate) fn parse_file_name(
             project_structure
                 .get_file_by_name(idx)
                 .map(|f| f.get_path().clone())
-                .unwrap_or_else(|| panic!("File not found by index or name: {}", idx))
+                .unwrap_or_else(|| {
+                    // Also try resolving as a root-relative path.
+                    let candidate = configs.get_root_path().join(idx);
+                    if candidate.exists() {
+                        std::fs::canonicalize(&candidate).unwrap_or(candidate)
+                    } else {
+                        // Do not panic on user input; let the caller validate existence and return a friendly error.
+                        candidate
+                    }
+                })
         }
         name_or_path => {
             // Try to resolve by name first, then by path
             project_structure
                 .get_file_by_name(name_or_path)
                 .map(|f| f.get_path().clone())
-                .unwrap_or_else(|| PathBuf::from(name_or_path))
+                .unwrap_or_else(|| {
+                    let p = PathBuf::from(name_or_path);
+                    if p.is_absolute() {
+                        return p;
+                    }
+
+                    // If the provided path exists as-is, canonicalize it.
+                    if p.exists() {
+                        return std::fs::canonicalize(&p).unwrap_or(p);
+                    }
+
+                    // Otherwise, interpret it as root-relative.
+                    let candidate = configs.get_root_path().join(&p);
+                    if candidate.exists() {
+                        return std::fs::canonicalize(&candidate).unwrap_or(candidate);
+                    }
+
+                    // Last resort: return as given.
+                    p
+                })
         }
     }
 }
-
+//ISSUE: the parsing logic having inconsistency and poor file_parsing logic
 pub fn run_parser(
     args: &ParsedCommand,
     configs: &Configs,
@@ -100,12 +151,16 @@ pub fn run_parser(
         program_args: Vec::new(),
     };
 
+    // Store a positional filename token (if any) and resolve it after parsing.
+    // This ensures `run` with no args still attempts a sensible default.
+    let mut file_token: Option<String> = None;
+
     let mut iter = args.args.iter().peekable();
-
     while let Some(arg) = iter.next() {
-        let arg = arg.trim().to_lowercase();
+        let raw_arg = arg.trim();
+        let lowered = raw_arg.to_lowercase();
 
-        match arg.as_str() {
+        match lowered.as_str() {
             "-h" | "--help" | "-help" => {
                 run_args.help_flag = true;
             }
@@ -119,7 +174,7 @@ pub fn run_parser(
             }
             "-in" | "<<" => {
                 if let Some(val) = iter.next() {
-                    match val.as_str() {
+                    match val.trim().to_lowercase().as_str() {
                         "lastin" => run_args.input = InputSource::LastIn("lastIn".to_string()),
                         "default" => run_args.input = InputSource::Default,
                         _ => run_args.input = InputSource::File(val.clone()),
@@ -128,21 +183,13 @@ pub fn run_parser(
             }
             "-out" | ">>" => {
                 if let Some(val) = iter.next() {
-                    match val.as_str() {
+                    match val.trim().to_lowercase().as_str() {
                         "lastout" => {
                             run_args.output = OutputDestination::LastOut("lastOut".to_string())
                         }
                         "default" => run_args.output = OutputDestination::Default,
                         _ => run_args.output = OutputDestination::File(val.clone()),
                     }
-                }
-            }
-            profile if !profile.starts_with('-') => {
-                // Assume it's the file name or build profile
-                if run_args.file_name.as_os_str().is_empty() {
-                    run_args.file_name = parse_file_name(profile, configs, project_structure);
-                } else {
-                    run_args.build_profile = Some(profile.to_string());
                 }
             }
             "--" => {
@@ -158,14 +205,21 @@ pub fn run_parser(
                 }
                 run_args.build_profile = Some(profile_name.to_string());
             }
-            file_name => {
-                // only the first non-flag argument is considered as file name
-                if !file_name.starts_with('-') && run_args.file_name.as_os_str().is_empty() {
-                    run_args.file_name = parse_file_name(file_name, configs, project_structure);
+            _ => {
+                if !raw_arg.starts_with('-') {
+                    if file_token.is_none() {
+                        file_token = Some(raw_arg.to_string());
+                    } else {
+                        // Optional second positional token: treat as build profile.
+                        run_args.build_profile = Some(raw_arg.to_string());
+                    }
                 }
             }
         }
     }
+
+    let file_arg = file_token.as_deref().unwrap_or("");
+    run_args.file_name = parse_file_name(file_arg, configs, project_structure);
 
     run_args
 }
@@ -182,7 +236,16 @@ fn execute(
     }
 
     let file_name = &run_args.file_name;
-    let file_name_str = file_name.to_str().unwrap_or("");
+    let file_name_str = file_name.to_string_lossy();
+    let file_name_str = file_name_str.as_ref();
+
+    let p = std::path::Path::new(file_name_str);
+    if file_name_str.trim().is_empty() || file_name_str == "." || !p.is_file() {
+        return Err(format!(
+            "No valid source file selected for run. Got: '{}'",
+            file_name_str
+        ));
+    }
     let std = run_args.std;
     let build_profile = &run_args.build_profile;
     let input = &run_args.input;
@@ -293,7 +356,12 @@ fn execute(
                 }
             }
 
-            let child_process = cmd.spawn().expect("Failed to spawn process");
+            let child_process = match cmd.spawn() {
+                Ok(p) => p,
+                Err(e) => {
+                    return Err(format!("Failed to spawn program: {}", e));
+                }
+            };
             #[cfg(any(test, debug_assertions))]
             {
                 println!("\t [Run : execute] : Spawned child process : ");
@@ -351,10 +419,22 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use assert_fs::prelude::*;
+    use assert_fs::TempDir;
 
     #[test]
     fn run_parser_test() {
+        let temp = TempDir::new().unwrap();
+        let root_path = temp.path().to_path_buf();
+
+        temp.child("main.cpp")
+            .write_str("int main(){return 0;}")
+            .unwrap();
+
+        let input_path = temp.child("input.txt");
+        input_path.write_str("hello\n").unwrap();
+        let output_path = temp.child("output.txt");
+
         let args = ParsedCommand {
             command_type: crate::cmd_parser::cmd::Type::Run,
             args: vec![
@@ -363,44 +443,47 @@ mod tests {
                 "17".to_string(),
                 "--release".to_string(),
                 "-in".to_string(),
-                "input.txt".to_string(),
+                input_path.path().to_string_lossy().to_string(),
                 "-out".to_string(),
-                "output.txt".to_string(),
+                output_path.path().to_string_lossy().to_string(),
                 "--".to_string(),
                 "arg1".to_string(),
                 "arg2".to_string(),
             ],
         };
-        let configs = Configs::test_config(None);
-        let mut project_structure = ProjectStructure::new(&configs);
+
+        let configs = Configs::default(root_path.clone());
+        let project_structure = ProjectStructure::new(&configs);
         let run_args = run_parser(&args, &configs, &project_structure);
-        let expected_path = {
-            let mut p = PathBuf::from(configs.get_root_path());
-            p.push("main.cpp");
-            p
-        };
-        let expected = std::fs::canonicalize(&expected_path)
-            .unwrap_or(expected_path)
-            .to_string_lossy()
-            .to_string();
-        let actual = run_args
-            .file_name
-            .canonicalize()
-            .unwrap_or(run_args.file_name.clone())
-            .to_string_lossy()
-            .to_string();
-        // Normalize separators for comparison across platforms
+
+        let expected = std::fs::canonicalize(root_path.join("main.cpp")).unwrap();
+        let actual = std::fs::canonicalize(&run_args.file_name).unwrap_or(run_args.file_name);
         assert_eq!(
-            crate::utils::canonicalize_path_separators(&actual),
-            crate::utils::canonicalize_path_separators(&expected)
+            crate::utils::canonicalize_path_separators(&actual.to_string_lossy()),
+            crate::utils::canonicalize_path_separators(&expected.to_string_lossy())
         );
         assert_eq!(run_args.std, Some(17));
+        assert_eq!(run_args.build_profile, Some("release".to_string()));
         match run_args.input {
-            InputSource::File(ref fname) => assert_eq!(fname, "input.txt"),
+            InputSource::File(ref fname) => {
+                assert_eq!(
+                    crate::utils::canonicalize_path_separators(fname),
+                    crate::utils::canonicalize_path_separators(
+                        &input_path.path().to_string_lossy()
+                    )
+                )
+            }
             _ => panic!("Input source should be File"),
         }
         match run_args.output {
-            OutputDestination::File(ref fname) => assert_eq!(fname, "output.txt"),
+            OutputDestination::File(ref fname) => {
+                assert_eq!(
+                    crate::utils::canonicalize_path_separators(fname),
+                    crate::utils::canonicalize_path_separators(
+                        &output_path.path().to_string_lossy()
+                    )
+                )
+            }
             _ => panic!("Output destination should be File"),
         }
         assert_eq!(
@@ -410,14 +493,61 @@ mod tests {
     }
 
     #[test]
+    fn run_parser_no_args_resolves_default_file() {
+        let temp = TempDir::new().unwrap();
+        let root_path = temp.path().to_path_buf();
+
+        // Prefer the canonical project layout.
+        temp.child("src").create_dir_all().unwrap();
+        temp.child("src/main.cpp")
+            .write_str("int main(){return 0;}")
+            .unwrap();
+
+        let args = ParsedCommand {
+            command_type: crate::cmd_parser::cmd::Type::Run,
+            args: vec![],
+        };
+
+        let configs = Configs::default(root_path.clone());
+        let project_structure = ProjectStructure::new(&configs);
+        let run_args = run_parser(&args, &configs, &project_structure);
+
+        let expected = std::fs::canonicalize(root_path.join("src").join("main.cpp")).unwrap();
+        let actual = std::fs::canonicalize(&run_args.file_name).unwrap_or(run_args.file_name);
+        assert_eq!(
+            crate::utils::canonicalize_path_separators(&actual.to_string_lossy()),
+            crate::utils::canonicalize_path_separators(&expected.to_string_lossy())
+        );
+    }
+
+    #[test]
     fn execute_run_test() {
-        // Skip if a C++ compiler isn't available on PATH.
-        if std::process::Command::new("g++")
+        let temp = TempDir::new().unwrap();
+        let root_path = temp.path().to_path_buf();
+
+        // Tiny program that echoes first line of stdin.
+        temp.child("main.cpp")
+            .write_str(
+                r#"#include <iostream>
+#include <string>
+int main(){ std::string s; std::getline(std::cin, s); std::cout << s; return 0; }"#,
+            )
+            .unwrap();
+
+        let input_path = temp.child("input.txt");
+        input_path.write_str("hello\n").unwrap();
+        let output_path = temp.child("output.txt");
+
+        let configs = Configs::default(root_path.clone());
+
+        // Skip if the configured compiler isn't available.
+        let compiler = configs.compiler_path().unwrap_or_else(|| "g++".to_string());
+        if std::process::Command::new(&compiler)
             .arg("--version")
             .output()
             .is_err()
         {
-            eprintln!("Skipping execute_run_test: g++ not found on PATH");
+            eprintln!("Skipping execute_run_test: {} not found on PATH", compiler);
             return;
         }
 
@@ -425,42 +555,22 @@ mod tests {
             command_type: crate::cmd_parser::cmd::Type::Run,
             args: vec![
                 "main.cpp".to_string(),
-                "-std".to_string(),
-                "17".to_string(),
                 "-in".to_string(),
-                format!(
-                    "tests{}test_project{}input.txt",
-                    std::path::MAIN_SEPARATOR,
-                    std::path::MAIN_SEPARATOR
-                ),
+                input_path.path().to_string_lossy().to_string(),
                 "-out".to_string(),
-                format!(
-                    "tests{}test_project{}output.txt",
-                    std::path::MAIN_SEPARATOR,
-                    std::path::MAIN_SEPARATOR
-                ),
-                "--".to_string(),
-                "arg1".to_string(),
-                "arg2".to_string(),
+                output_path.path().to_string_lossy().to_string(),
             ],
         };
-        let configs = Configs::test_config(Some("tests/test_project/config.toml"));
-        let mut project_structure = ProjectStructure::new(&configs);
+
+        let project_structure = ProjectStructure::new(&configs);
         let run_args = run_parser(&args, &configs, &project_structure);
-
         let mut project_structure = ProjectStructure::new(&configs);
-        let _ = execute(run_args, &configs, &mut project_structure);
 
-        let output_path = PathBuf::from_iter(["tests", "test_project", "output.txt"]);
-        match std::fs::File::open(&output_path) {
-            Ok(mut file) => {
-                use std::io::Read;
-                let mut contents = String::new();
-                file.read_to_string(&mut contents).unwrap();
-            }
-            Err(e) => {
-                panic!("Failed to open output file: {}", e);
-            }
-        }
+        let result = execute(run_args, &configs, &mut project_structure);
+        assert!(result.is_ok(), "run execute should succeed: {:?}", result);
+
+        let contents = std::fs::read_to_string(output_path.path())
+            .expect("output file should be created and readable");
+        assert_eq!(contents, "hello");
     }
 }

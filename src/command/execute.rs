@@ -1,5 +1,6 @@
 use crate::cmd_parser::cmd::Type;
 use crate::cmd_parser::parser::ParsedCommand;
+use crate::command::ion_help::ion_help;
 use crate::config::Configs;
 use crate::constants;
 use crate::state::structure::ProjectStructure;
@@ -15,8 +16,8 @@ pub fn execute(
         Type::Build => crate::command::build::build(parsed_command, configs, project_structure),
         Type::Run => crate::command::run::run(parsed_command, configs, project_structure),
         Type::Init => {
-            // `init` returns `Result<(), String>` — map success to a string.
-            crate::command::init::init(parsed_command, configs).map(|_| "Init executed".to_string())
+            // Preserve init's user-facing output.
+            crate::command::init::init(parsed_command)
         }
         Type::Check => crate::command::check::check(parsed_command, configs, project_structure),
         Type::Clean => {
@@ -35,13 +36,12 @@ pub fn execute(
         }
         Type::Help => {
             // Basic help: delegate to init/gen help if available or print a short message
-            println!("cbuild: help - available commands: build, run, check, clean, init, env");
+            ion_help();
             Ok("help displayed".to_string())
         }
         // Not implemented command types return a clear error
         Type::Log | Type::Config | Type::Previous | Type::Watcher => {
             Err("Command not implemented yet".to_string())
         }
-        _ => Err("Command not implemented yet".to_string()),
     }
 }

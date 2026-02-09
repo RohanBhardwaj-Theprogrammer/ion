@@ -38,9 +38,7 @@ impl Compiler {
         // }
         //instead using this
         if !project_structure.exists(std::path::Path::new("build")) {
-            project_structure
-                .create_dir(std::path::Path::new("build"))
-                .unwrap();
+            let _ = project_structure.create_dir(std::path::Path::new("build"));
         }
 
         let build_name = format!("{}/build/{}.exe", project_path.display(), exe_name);
