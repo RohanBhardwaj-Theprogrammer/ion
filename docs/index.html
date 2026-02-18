@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ion — C/C++ Build Tool</title>
+  <meta name="description" content="ion is a fast C/C++ build system written in Rust. Initialize, build, run, check, and clean projects from a single CLI." />
+  <link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+
+<!-- ── Header ───────────────────────────────────── -->
+<header class="header">
+  <div class="wrap header-inner">
+    <a href="#home" class="brand">ion</a>
+    <button class="menu-btn" id="menuBtn" aria-label="Menu" aria-expanded="false">Menu</button>
+    <nav id="nav" class="nav">
+      <a href="#home" class="active">Home</a>
+      <a href="#getting-started">Getting Started</a>
+      <a href="#commands">Commands</a>
+      <a href="#downloads">Downloads</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── Home ────────────────────────────────────── -->
+  <section id="home" class="wrap section">
+    <div class="hero">
+      <div>
+        <h1>Build C/C++ projects faster.</h1>
+        <p class="lead">ion is a Rust-powered CLI that initializes, compiles, runs, checks, and cleans C/C++ projects with project-local configuration.</p>
+        <div class="hero-cta">
+          <a class="btn btn-accent" href="#downloads">Download</a>
+          <a class="btn" href="#getting-started">Get started</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Quick start</h3>
+        <pre><code>ion init .
+ion build .
+ion run . -- --help</code></pre>
+      </div>
+    </div>
+
+    <div class="grid-3">
+      <article class="card">
+        <h3>What is ion?</h3>
+        <p>An early-stage C/C++ build system and future package manager, written in Rust.</p>
+      </article>
+      <article class="card">
+        <h3>Project layout</h3>
+        <p>Config lives in <code>.cbuild</code>. Source in <code>src/</code>, headers in <code>include/</code>, output in <code>build/</code>.</p>
+      </article>
+      <article class="card">
+        <h3>Six core commands</h3>
+        <p><code>init</code> · <code>build</code> · <code>run</code> · <code>check</code> · <code>env</code> · <code>clean</code></p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── Getting Started ─────────────────────────── -->
+  <section id="getting-started" class="wrap section">
+    <h2 class="section-title">Getting Started</h2>
+
+    <div class="card">
+      <h3>Prerequisites</h3>
+      <ul>
+        <li>A C/C++ compiler on your <code>PATH</code> (e.g. <code>g++</code> or <code>clang++</code>).</li>
+        <li>The <code>ion</code> binary — grab it from <a href="#downloads">Downloads</a> or build from source with Rust.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>Create a project</h3>
+      <pre><code>ion init .</code></pre>
+      <p>Generates <code>.cbuild/</code>, <code>src/</code>, <code>include/</code>, <code>build/</code>, and a starter source file.</p>
+    </div>
+
+    <div class="card">
+      <h3>Build &amp; run</h3>
+      <pre><code>ion build .
+ion run . -- arg1 arg2</code></pre>
+      <p>Profiles: <code>--release</code>, <code>--debug</code>, <code>--fast</code>.</p>
+    </div>
+
+    <div class="card">
+      <h3>Check &amp; clean</h3>
+      <pre><code>ion check . --verbose
+ion clean</code></pre>
+      <p><code>check</code> runs syntax checking. <code>clean</code> removes <code>build/</code> and supports extension cleanup via <code>--all --force</code>.</p>
+    </div>
+  </section>
+
+  <!-- ── Commands ────────────────────────────────── -->
+  <section id="commands" class="wrap section">
+    <h2 class="section-title">Command Reference</h2>
+
+    <div class="cmd-grid">
+      <div class="card">
+        <h3>init</h3>
+        <pre><code>ion init [path] [-c|-cpp] [--force] [--custom-structure=&lt;path|clean&gt;] [-i]</code></pre>
+        <p>Scaffold a new project with <code>.cbuild</code> config and default directory structure.</p>
+      </div>
+
+      <div class="card">
+        <h3>build</h3>
+        <pre><code>ion build [target] [--profile] [-std N] [-opt N] [-I path]</code></pre>
+        <p>Compile the target. Accepts <code>--release</code>, <code>--debug</code>, or <code>--fast</code> profiles.</p>
+      </div>
+
+      <div class="card">
+        <h3>run</h3>
+        <pre><code>ion run [target] [-in file] [-out file] [--profile] [-- args...]</code></pre>
+        <p>Build then execute the binary. Env vars from <code>.cbuild/env/run.env</code> are injected automatically.</p>
+      </div>
+
+      <div class="card">
+        <h3>check</h3>
+        <pre><code>ion check [target] [--profile] [--verbose] [-std N]</code></pre>
+        <p>Syntax-only compilation — catches errors without producing a binary.</p>
+      </div>
+
+      <div class="card">
+        <h3>env</h3>
+        <pre><code>ion env [--cmd run|build] [KEY=VALUE ...] [-path file] [--clear]</code></pre>
+        <p>Manage environment variables stored in <code>.cbuild/env/run.env</code> or <code>build.env</code>.</p>
+      </div>
+
+      <div class="card">
+        <h3>clean</h3>
+        <pre><code>ion clean [--all --force] [.ext ...] [-e path]</code></pre>
+        <p>Remove <code>build/</code>. With <code>--all --force</code>, also deletes files matching given extensions.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Downloads ───────────────────────────────── -->
+  <section id="downloads" class="wrap section">
+    <h2 class="section-title">Downloads</h2>
+
+    <div class="card">
+      <p id="detectedOS" class="dim">Detecting your OS…</p>
+      <a id="primaryDownload" class="btn btn-accent" href="#" style="margin:12px 0">Download for your OS</a>
+      <p id="downloadHint" class="dim"></p>
+    </div>
+
+    <div class="card">
+      <h3>Direct links</h3>
+      <ul class="dl-links">
+        <li><a id="winLink" href="#" target="_blank" rel="noreferrer">Windows x86_64</a></li>
+        <li><a id="linuxLink" href="#" target="_blank" rel="noreferrer">Linux x86_64</a></li>
+        <li><a id="latestReleaseLink" href="#" target="_blank" rel="noreferrer">All releases</a></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>Post-install</h3>
+      <p><strong>Windows</strong> — run <code>ion-windows-x86_64.exe</code> directly or rename to <code>ion.exe</code> and add to PATH.</p>
+      <p><strong>Linux</strong>:</p>
+      <pre><code>chmod +x ion-linux-x86_64
+./ion-linux-x86_64 --help</code></pre>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <span>ion — C/C++ build tool</span>
+    <span>&copy; <span id="year"></span></span>
+  </div>
+</footer>
+
+<script src="./assets/site.js"></script>
+<script src="./assets/downloads.js"></script>
+</body>
+</html>
