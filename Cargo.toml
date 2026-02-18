@@ -2,6 +2,9 @@
 name = "ion"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
+readme = "README.md"
+description = "A C/C++ build system (future package manager) written in Rust"
 
 [dependencies]
 chrono = "0.4.42"

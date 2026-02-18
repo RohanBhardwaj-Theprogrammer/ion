@@ -6,6 +6,34 @@ use crate::compiler::trailt::FromBuildConfigs;
 use crate::config::Configs;
 use crate::state::ProjectStructure;
 use crate::utils::is_numeric;
+
+/// Load env vars stored by the `env` command for a given scope file (e.g. `run.env`).
+///
+/// Reads `.cbuild/env/<scope_file>` under the project root and returns all
+/// `KEY=value` pairs, skipping blank lines and `#` comments.
+/// Returns an empty vec if the file does not exist or cannot be read.
+pub(crate) fn load_env_vars(project_structure: &ProjectStructure, scope_file: &str) -> Vec<(String, String)> {
+    let env_file = match project_structure
+        .get_env_file_path()
+        .map(|p| p.parent().unwrap().join("env").join(scope_file))
+    {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+
+    if !env_file.exists() {
+        return Vec::new();
+    }
+
+    std::fs::read_to_string(&env_file)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+        .filter_map(|l| {
+            l.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        })
+        .collect()
+}
 /*
 run "" | <path> [args] [buildProfile] | <--help | -h | -help> | --config < { [-std <int>] , [. <lastExe | project.exe>] ,
  [-in <lastIn | default>] , [-out <lastOut | default>] } > | <-interactive | -i >
@@ -308,6 +336,19 @@ fn execute(
         Ok(binary_path) => {
             use std::process::Command;
             let mut cmd = Command::new(binary_path);
+
+            // ── Set cwd to project root so the binary's relative paths resolve correctly ──
+            cmd.current_dir(configs.get_root_path());
+            #[cfg(any(test, debug_assertions))]
+            println!("\t [Run : execute] : Set command cwd to project root: {}", configs.get_root_path().display());
+            // ── Inject env vars from .cbuild/env/run.env ────────────────────
+            let env_vars = load_env_vars(project_structure, "run.env");
+            if !env_vars.is_empty() {
+                cmd.envs(env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+                #[cfg(any(test, debug_assertions))]
+                println!("[Run] injecting {} env var(s) from run.env", env_vars.len());
+            }
+
             #[cfg(any(test, debug_assertions))]
             {
                 dbg!(&cmd);

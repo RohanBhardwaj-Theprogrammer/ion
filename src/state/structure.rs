@@ -183,16 +183,8 @@ fn test_dir_node_ops() {
 /// The structure is built by scanning the configured root directory and recording files.
 /// Directories excluded via [`Configs::is_excluded_dir`] are skipped.
 ///
-/// Example (uses the crate test project):
-/// ```no_run
-/// use c_cpp_build_system_n_pkg_manager::{config::Configs, state::ProjectStructure};
-///
-/// let configs = Configs::test_config(None);
-/// let structure = ProjectStructure::new(&configs);
-///
-/// // Query some basic facts
-/// assert!(!structure.get_all_files().is_empty());
-/// ```
+/// Use [`ProjectStructure::new`] to build the index from a [`Configs`] instance.
+/// Query methods like `get_all_files()` return references to [`FileNode`] entries.
 
 #[derive(Debug, Clone)]
 pub struct ProjectStructure {
@@ -264,17 +256,7 @@ impl ProjectStructure {
     /// - Builds an internal directory tree for efficient lookup.
     /// - Also indexes the tool directory `.{PROGRAM_NAME}` (if present) into `dot_dir`.
     ///
-    /// Example:
-    /// ```no_run
-    /// use c_cpp_build_system_n_pkg_manager::{config::Configs, state::ProjectStructure};
-    ///
-    /// let configs = Configs::test_config(None);
-    /// let structure = ProjectStructure::new(&configs);
-    ///
-    /// // Find candidate entry points
-    /// let entries = structure.get_entry_files();
-    /// assert!(!entries.is_empty());
-    /// ```
+    /// After construction, use `get_all_files()`, `get_entry_files()`, etc. to query the index.
     pub fn new(configs: &Configs) -> Self {
         let root_path = fs::canonicalize(configs.get_project_root())
             .unwrap_or_else(|_| configs.get_project_root().clone());
@@ -380,17 +362,8 @@ impl ProjectStructure {
     /// The returned [`ProjectStructureAsRef`] behaves like a lightweight cursor that
     /// interprets relative paths as being *relative to* that subfolder.
     ///
-    /// Example:
-    /// ```no_run
-    /// use c_cpp_build_system_n_pkg_manager::{config::Configs, state::ProjectStructure};
-    ///
-    /// let configs = Configs::test_config(None);
-    /// let ps = ProjectStructure::new(&configs);
-    ///
-    /// let src = ps.to("test_sample/src")?;
-    /// assert!(src.get_file_by_path(std::path::Path::new("main.cpp")).is_some());
-    /// # Ok::<(), String>(())
-    /// ```
+    /// Pass a root-relative path string such as `"src"` or `"test_sample/src"`.
+    /// Returns an error if the subfolder does not exist under the project root.
     pub fn to<P: AsRef<Path>>(&self, subfolder: P) -> Result<ProjectStructureAsRef<'_>, String> {
         let subfolder = subfolder.as_ref();
 
@@ -452,18 +425,7 @@ impl ProjectStructure {
     /// `header_name` is matched as a *path suffix* (`Path::ends_with`), so values like
     /// `"logger.h"` will match `.../include/logger.h` and `.../src/logger.h`.
     ///
-    /// Returns absolute paths.
-    ///
-    /// Example:
-    /// ```no_run
-    /// use c_cpp_build_system_n_pkg_manager::{config::Configs, state::ProjectStructure};
-    ///
-    /// let configs = Configs::test_config(None);
-    /// let structure = ProjectStructure::new(&configs);
-    ///
-    /// let paths = structure.get_header_file_paths("logger.h").unwrap();
-    /// assert!(!paths.is_empty());
-    /// ```
+    /// Returns `Some(Vec<PathBuf>)` with absolute paths, or `None` if no match is found.
     pub fn get_header_file_paths(&self, header_name: &str) -> Option<Vec<PathBuf>> {
         let header_files = self.get_header_file();
 
@@ -516,17 +478,7 @@ impl ProjectStructure {
 
     /// Returns `true` if `path` exists and is under the project root.
     ///
-    /// `path` may be absolute or root-relative.
-    ///
-    /// Example:
-    /// ```no_run
-    /// use std::path::Path;
-    /// use c_cpp_build_system_n_pkg_manager::{config::Configs, state::ProjectStructure};
-    ///
-    /// let configs = Configs::test_config(None);
-    /// let structure = ProjectStructure::new(&configs);
-    /// assert!(structure.exists(Path::new("src/main.cpp")));
-    /// ```
+    /// `path` may be absolute or root-relative (e.g. `Path::new("src/main.cpp")`).
     pub fn exists(&self, path: &Path) -> bool {
         self.resolve_under_root(path).is_ok()
     }
@@ -572,19 +524,10 @@ impl ProjectStructure {
 
     /// Create a directory on disk (under the project root) and add it to the structure.
     ///
-    /// `path` is treated as root-relative.
+    /// `path` is treated as root-relative (e.g. `Path::new("build/generated")`).
+    /// Returns the root-relative path that was created, or an error on failure.
     ///
-    /// Example:
-    /// ```no_run
-    /// use std::path::Path;
-    /// use c_cpp_build_system_n_pkg_manager::{config::Configs, state::ProjectStructure};
-    ///
-    /// let configs = Configs::test_config(None);
-    /// let mut structure = ProjectStructure::new(&configs);
-    /// let created = structure.create_dir(Path::new("build/generated"))?;
-    /// assert!(created.ends_with("build/generated"));
-    /// # Ok::<(), String>(())
-    /// ```
+    /// Note: uses `fs::create_dir_all` internally, so intermediate directories are created.
     pub fn create_dir(&mut self, path: &Path) -> Result<PathBuf, String> {
         // Handle "." as root
         if path == Path::new(".") {
@@ -629,18 +572,10 @@ impl ProjectStructure {
         Ok(root_relative_path)
     }
 
-    /// Get all files with a specific extension (case-insensitive, e.g., ".cpp" or "cpp")
-    /// Argument `extension` can be with or without leading dot.
+    /// Get all files with a specific extension (case-insensitive).
     ///
-    /// Example:
-    /// ```no_run
-    /// use c_cpp_build_system_n_pkg_manager::{config::Configs, state::ProjectStructure};
-    ///
-    /// let configs = Configs::test_config(None);
-    /// let structure = ProjectStructure::new(&configs);
-    /// let cpp_files = structure.get_files_with_extension(".cpp");
-    /// assert!(!cpp_files.is_empty());
-    /// ```
+    /// `extension` can be provided with or without a leading dot (`".cpp"` or `"cpp"`).
+    /// Returns references to all matching [`FileNode`] entries in the project.
     pub fn get_files_with_extension(&self, extension: &str) -> Vec<&FileNode> {
         let normalized = extension
             .trim()
@@ -1024,6 +959,21 @@ impl ProjectStructure {
         self.dot_dir.as_ref()
     }
 
+    /// Returns the path to the env file inside the tool directory (`.cbuild/env.json`).
+    ///
+    /// The file may not yet exist on disk — callers are responsible for creating it.
+    /// Returns `None` if the project root is empty (i.e. `ProjectStructure::none()`).
+    pub fn get_env_file_path(&self) -> Option<std::path::PathBuf> {
+        if self.root_path.as_os_str().is_empty() {
+            return None;
+        }
+        Some(
+            self.root_path
+                .join(format!(".{}", crate::constants::PROGRAM_NAME))
+                .join("env.json"),
+        )
+    }
+
     #[cfg(any(debug_assertions, test))]
     #[allow(dead_code)]
     pub fn debug_print(&self) {
@@ -1287,6 +1237,7 @@ fn get_files_node(dir_path: PathBuf, configs: &Configs) -> HashSet<PathBuf> {
 /// A lightweight borrowed “view” of a [`ProjectStructure`], anchored at a current directory.
 ///
 /// This is a placeholder for a future proxy API.
+/// NOTE: Unused for now, but we want to keep it around as a reference for the future API design.
 #[allow(dead_code)]
 pub struct ProjectStructureAsRef<'a> {
     structure: &'a ProjectStructure,

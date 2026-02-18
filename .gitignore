@@ -9,8 +9,9 @@ TODO
 BluePrint.md
 ishell
 .vscode
-tests
+
 .devcontainer
 test_util
 target
 .dockerignore
+powershell_funcs.ps1

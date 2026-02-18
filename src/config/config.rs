@@ -386,7 +386,7 @@ impl Configs {
         }
 
         false
-    }
+    } 
 
     pub fn get_file(&self, file_arg: &str) -> PathBuf {
         // Return main file if arg is empty/dot and is_dot_main_file is true

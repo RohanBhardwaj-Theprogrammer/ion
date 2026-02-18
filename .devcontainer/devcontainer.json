@@ -13,7 +13,6 @@
   },
   "remoteUser": "root",
   "postCreateCommand": "rustc --version && cargo --version && cargo install cargo-watch",
-  // "postStartCommand": "cargo watch -x 'check' -d 5",
-  // "forwardPorts": [3000, 8000],
+
   "shutdownAction": "stopContainer"
 }

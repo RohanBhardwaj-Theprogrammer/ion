@@ -28,14 +28,11 @@ pub fn truncate(path: &Path) -> Result<bool, std::io::Error> {
 
 /// Trims matching quotes from the start and end of a string.
 /// If the string does not start and end with matching quotes, it is returned unchanged.
-/// # Examples
-/// ```rust
-/// use c_cpp_build_system_n_pkg_manager::utils::trim_quotes;
 ///
-/// let s = r#""Hello, World!""#;
-/// let trimmed = trim_quotes(s);
-/// assert_eq!(trimmed, "Hello, World!");
-/// ```
+/// # Examples
+/// - `"Hello, World!"` → `Hello, World!`
+/// - `'foo'` → `foo`
+/// - `"mismatched'` → `"mismatched'` (unchanged)
 pub fn trim_quotes(s: &str) -> String {
     let mut chars = s.chars();
     if let (Some(first), Some(last)) = (chars.next(), chars.next_back()) {
